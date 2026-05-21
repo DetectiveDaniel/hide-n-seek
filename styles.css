@@ -145,6 +145,10 @@ h1 {
   pointer-events: none;
 }
 
+.mobile-controls {
+  display: none;
+}
+
 .is-hidden {
   opacity: 0;
 }
@@ -192,5 +196,50 @@ button:disabled {
   .seek-list {
     grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
     max-height: none;
+  }
+
+  .mobile-controls {
+    position: absolute;
+    right: 14px;
+    bottom: 14px;
+    display: grid;
+    grid-template-columns: repeat(3, 54px);
+    grid-template-rows: repeat(3, 54px);
+    gap: 4px;
+    pointer-events: auto;
+  }
+
+  .mobile-arrow {
+    min-height: 54px;
+    border: 2px solid #172033;
+    background: rgba(246, 241, 223, 0.78);
+    color: #172033;
+    font-size: 1.7rem;
+    line-height: 1;
+  }
+
+  .mobile-arrow.up {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .mobile-arrow.left {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  .mobile-arrow.interact {
+    grid-column: 2;
+    grid-row: 2;
+  }
+
+  .mobile-arrow.right {
+    grid-column: 3;
+    grid-row: 2;
+  }
+
+  .mobile-arrow.down {
+    grid-column: 2;
+    grid-row: 3;
   }
 }

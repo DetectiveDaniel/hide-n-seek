@@ -8,6 +8,7 @@ const perspectiveName = document.querySelector("#perspectiveName");
 const message = document.querySelector("#message");
 const restart = document.querySelector("#restart");
 const nextLevel = document.querySelector("#nextLevel");
+const mobileControls = document.querySelector(".mobile-controls");
 
 const world = { width: 2200, height: 1500 };
 const targetNames = [
@@ -174,7 +175,7 @@ const keys = new Set();
 const mouse = { active: false, x: 0, y: 0 };
 const perspectives = [
   { name: "Map View", zoom: 1 },
-  { name: "Chase View", zoom: 1.75 },
+  { name: "First Person", zoom: 1 },
 ];
 let currentLevelIndex = 0;
 let perspectiveIndex = 0;
@@ -194,6 +195,43 @@ let snowDrainTimer;
 let mazeMode;
 let superPower;
 let keysReadyAnnounced;
+let firstPersonPlace = "street";
+
+const mazeWalls = [
+  [0, 0, 1024, 24],
+  [0, 616, 1024, 24],
+  [0, 0, 24, 640],
+  [1000, 0, 24, 640],
+  [24, 70, 120, 24],
+  [205, 24, 24, 118],
+  [300, 70, 208, 24],
+  [575, 24, 24, 150],
+  [650, 70, 260, 24],
+  [86, 155, 210, 24],
+  [86, 155, 24, 132],
+  [205, 220, 24, 190],
+  [300, 155, 24, 132],
+  [388, 155, 230, 24],
+  [388, 155, 24, 200],
+  [500, 240, 24, 190],
+  [650, 155, 24, 105],
+  [735, 155, 210, 24],
+  [735, 155, 24, 130],
+  [890, 220, 24, 165],
+  [24, 340, 120, 24],
+  [86, 340, 24, 150],
+  [270, 300, 140, 24],
+  [270, 300, 24, 210],
+  [365, 430, 210, 24],
+  [575, 315, 24, 220],
+  [650, 315, 260, 24],
+  [650, 315, 24, 120],
+  [735, 430, 210, 24],
+  [890, 430, 24, 125],
+  [145, 505, 210, 24],
+  [435, 530, 210, 24],
+  [725, 530, 210, 24],
+];
 
 function randomBetween(min, max) {
   return min + Math.random() * (max - min);
@@ -213,6 +251,10 @@ function activeBiome() {
 
 function activePerspective() {
   return perspectives[perspectiveIndex];
+}
+
+function isFirstPerson() {
+  return activePerspective().name === "First Person";
 }
 
 function viewWidth() {
@@ -423,6 +465,7 @@ function startLevel(index) {
   mazeMode = false;
   superPower = false;
   keysReadyAnnounced = false;
+  firstPersonPlace = "street";
   nextLevel.disabled = true;
   levelName.textContent = "Choose a Place";
   perspectiveName.textContent = "Map Select";
@@ -444,6 +487,7 @@ function startMission(region) {
     trail: [],
     mazeX: 70,
     mazeY: 560,
+    height: 0,
   };
 
   setupMissionObjects(region);
@@ -461,6 +505,7 @@ function startMission(region) {
   mazeMode = false;
   superPower = false;
   keysReadyAnnounced = false;
+  firstPersonPlace = "street";
   nextLevel.disabled = true;
   levelName.textContent = `${region.name} Mission`;
   perspectiveName.textContent = activePerspective().name;
@@ -540,6 +585,11 @@ function updatePlayer() {
     return;
   }
 
+  if (isFirstPerson()) {
+    updateFirstPersonPlayer();
+    return;
+  }
+
   let dx = 0;
   let dy = 0;
   if (keys.has("arrowleft") || keys.has("a")) dx -= 1;
@@ -563,6 +613,59 @@ function updatePlayer() {
   player.y = clamp(player.y + (dy / length) * speed, player.radius, world.height - player.radius);
   player.trail.unshift({ x: player.x, y: player.y });
   player.trail.length = 420;
+}
+
+function updateFirstPersonPlayer() {
+  let dx = 0;
+  let dy = 0;
+  if (keys.has("arrowleft") || keys.has("a")) dx -= 1;
+  if (keys.has("arrowright") || keys.has("d")) dx += 1;
+  if (keys.has("arrowup") || keys.has("w")) dy -= 1;
+  if (keys.has("arrowdown") || keys.has("s")) dy += 1;
+
+  const length = Math.hypot(dx, dy) || 1;
+  const speed = superPower ? player.speed * 1.35 : player.speed;
+  player.x = clamp(player.x + (dx / length) * speed, player.radius, world.width - player.radius);
+  player.y = clamp(player.y + (dy / length) * speed, player.radius, world.height - player.radius);
+  player.height = Math.max(0, player.height - 0.03);
+  player.trail.unshift({ x: player.x, y: player.y });
+  player.trail.length = 420;
+}
+
+function climbThing() {
+  if (!gameStarted || !isFirstPerson() || !selectedRegion) {
+    return;
+  }
+
+  if (selectedRegion.name === "Baskerville" || selectedRegion.name === "Forest") {
+    player.height = 1;
+    showMessage("Tim climbed up high.", 1200);
+  }
+}
+
+function interact() {
+  if (!gameStarted || gameWon) {
+    return;
+  }
+
+  if (!isFirstPerson()) {
+    showMessage("Press F5 for first person interactions.", 1200);
+    return;
+  }
+
+  if (firstPersonPlace !== "street") {
+    firstPersonPlace = "street";
+    showMessage("Tim went back outside.", 1200);
+    return;
+  }
+
+  if (selectedRegion?.name !== "Baskerville") {
+    showMessage("There is nothing to open here yet.", 1200);
+    return;
+  }
+
+  firstPersonPlace = "clock";
+  showMessage("Tim opened the clock building door and hid inside.", 1600);
 }
 
 function updateMazePlayer() {
@@ -592,21 +695,7 @@ function updateMazePlayer() {
 }
 
 function mazeWallAt(x, y) {
-  const walls = [
-    [0, 0, canvas.width, 18],
-    [0, canvas.height - 18, canvas.width, 18],
-    [0, 0, 18, canvas.height],
-    [canvas.width - 18, 0, 18, canvas.height],
-    [120, 90, 28, 430],
-    [230, 0, 28, 420],
-    [340, 210, 28, 430],
-    [450, 80, 28, 420],
-    [560, 220, 28, 420],
-    [670, 0, 28, 430],
-    [780, 210, 28, 330],
-    [890, 80, 28, 420],
-  ];
-  return walls.some(([wx, wy, ww, wh]) => x > wx - 10 && x < wx + ww + 10 && y > wy - 10 && y < wy + wh + 10);
+  return mazeWalls.some(([wx, wy, ww, wh]) => x > wx - 10 && x < wx + ww + 10 && y > wy - 10 && y < wy + wh + 10);
 }
 
 function updateFollowers() {
@@ -1237,32 +1326,234 @@ function drawSelectionMap() {
 function drawMaze() {
   ctx.imageSmoothingEnabled = false;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.fillStyle = "#101621";
+  ctx.fillStyle = "#050505";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
-  ctx.fillStyle = "#38425a";
-  const walls = [
-    [0, 0, canvas.width, 18],
-    [0, canvas.height - 18, canvas.width, 18],
-    [0, 0, 18, canvas.height],
-    [canvas.width - 18, 0, 18, canvas.height],
-    [120, 90, 28, 430],
-    [230, 0, 28, 420],
-    [340, 210, 28, 430],
-    [450, 80, 28, 420],
-    [560, 220, 28, 420],
-    [670, 0, 28, 430],
-    [780, 210, 28, 330],
-    [890, 80, 28, 420],
-  ];
-  for (const wall of walls) {
-    ctx.fillRect(...wall);
+
+  ctx.fillStyle = "#f2a04a";
+  for (let y = 35; y < canvas.height - 18; y += 26) {
+    for (let x = 38; x < canvas.width - 18; x += 32) {
+      ctx.fillRect(x, y, 5, 5);
+    }
   }
-  ctx.fillStyle = "#9ee493";
-  ctx.fillRect(canvas.width - 78, 22, 48, 48);
+
+  for (const wall of mazeWalls) {
+    drawMazeWall(...wall);
+  }
+
+  ctx.fillStyle = "#59d46f";
+  ctx.fillRect(canvas.width - 86, 28, 56, 44);
+  ctx.fillStyle = "#137a34";
+  ctx.fillRect(canvas.width - 78, 36, 40, 28);
   ctx.fillStyle = "#71c7ff";
   ctx.fillRect(player.mazeX - 13, player.mazeY - 13, 26, 26);
-  drawPixelText("QUESTION-MARK MAZE", canvas.width / 2, 46, 28, "#fff3b5");
-  drawPixelText("EXIT", canvas.width - 54, 95, 18, "#fff3b5");
+  ctx.fillStyle = "#f1c59a";
+  ctx.fillRect(player.mazeX - 8, player.mazeY - 28, 16, 15);
+  ctx.fillStyle = "#fff3b5";
+  ctx.font = "800 20px \"Courier New\", monospace";
+  ctx.textAlign = "center";
+  ctx.fillText("EXIT", canvas.width - 58, 94);
+}
+
+function drawMazeWall(x, y, width, height) {
+  ctx.fillStyle = "#f28c38";
+  ctx.fillRect(x, y, width, height);
+  ctx.fillStyle = "#ffd08a";
+  ctx.fillRect(x, y, width, 5);
+  ctx.fillStyle = "#8b3f21";
+  ctx.fillRect(x, y + height - 5, width, 5);
+
+  ctx.fillStyle = "#1b0e0a";
+  const brick = 22;
+  for (let rowY = y + 7; rowY < y + height - 5; rowY += 12) {
+    const offset = Math.floor((rowY - y) / 12) % 2 === 0 ? 0 : brick / 2;
+    for (let lineX = x + offset; lineX < x + width; lineX += brick) {
+      ctx.fillRect(lineX, rowY, 3, 8);
+    }
+  }
+  for (let lineY = y + 12; lineY < y + height - 6; lineY += 12) {
+    ctx.fillRect(x, lineY, width, 3);
+  }
+}
+
+function drawFirstPerson() {
+  ctx.imageSmoothingEnabled = false;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = "#e6e2ef";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = "#c7c0d0";
+  ctx.fillRect(0, 430, canvas.width, 210);
+
+  if (firstPersonPlace === "gambling") {
+    drawGamblingInterior();
+    return;
+  }
+
+  if (firstPersonPlace === "clock") {
+    drawClockInterior();
+    return;
+  }
+
+  if (selectedRegion?.name === "Baskerville") {
+    drawBaskervilleStreet();
+  } else {
+    drawGenericFirstPerson();
+  }
+
+  drawFirstPersonHud();
+}
+
+function drawBaskervilleStreet() {
+  drawGamblingBuilding(80, 110, 140, 320);
+  drawBaskervilleHuman(360, 245, 0.9);
+  drawBaskervilleHuman(545, 235, 1.35);
+  drawBaskervilleHuman(700, 145, 0.7);
+  drawClockBuilding(830, 88, 150, 320);
+  drawFirstPersonTree(620, 445);
+
+  if (player.height > 0.2) {
+    drawPixelText("CLIMBING", 514, 82, 26, "#172033");
+  }
+}
+
+function drawGenericFirstPerson() {
+  drawFirstPersonTree(185, 400);
+  drawFirstPersonTree(780, 390);
+  drawPixelText(`${selectedRegion.name} first person`, canvas.width / 2, 130, 34, "#172033");
+  drawPixelText("Space interacts. Top arrow climbs on mobile.", canvas.width / 2, 185, 22, "#172033");
+}
+
+function drawGamblingBuilding(x, y, w, h) {
+  ctx.fillStyle = "#d7d0c4";
+  ctx.fillRect(x, y, w, h);
+  ctx.strokeStyle = "#172033";
+  ctx.lineWidth = 4;
+  ctx.strokeRect(x, y, w, h);
+  drawPixelText("Gambling", x + w / 2, y + 45, 20, "#172033");
+  ctx.fillStyle = "#b8c7dd";
+  for (let row = 0; row < 2; row += 1) {
+    for (let col = 0; col < 2; col += 1) {
+      ctx.fillRect(x + 28 + col * 56, y + 80 + row * 82, 42, 52);
+      ctx.strokeRect(x + 28 + col * 56, y + 80 + row * 82, 42, 52);
+    }
+  }
+  ctx.fillStyle = "#b69a7b";
+  ctx.fillRect(x + 55, y + h - 72, 36, 72);
+  ctx.strokeRect(x + 55, y + h - 72, 36, 72);
+}
+
+function drawClockBuilding(x, y, w, h) {
+  ctx.fillStyle = "#d7d0c4";
+  ctx.beginPath();
+  ctx.moveTo(x + w / 2, y - 55);
+  ctx.lineTo(x - 18, y + 35);
+  ctx.lineTo(x, y + h);
+  ctx.lineTo(x + w, y + h);
+  ctx.lineTo(x + w + 18, y + 35);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "#172033";
+  ctx.lineWidth = 4;
+  ctx.stroke();
+  ctx.fillStyle = "#ede7db";
+  ctx.fillRect(x + 55, y + 52, 42, 42);
+  ctx.strokeRect(x + 55, y + 52, 42, 42);
+  ctx.fillStyle = "#172033";
+  ctx.fillRect(x + 74, y + 61, 4, 20);
+  ctx.fillRect(x + 76, y + 78, 14, 4);
+  for (let row = 0; row < 3; row += 1) {
+    for (let col = 0; col < 3; col += 1) {
+      ctx.fillStyle = "#b8c7dd";
+      ctx.fillRect(x + 25 + col * 42, y + 125 + row * 48, 24, 28);
+      ctx.strokeRect(x + 25 + col * 42, y + 125 + row * 48, 24, 28);
+    }
+  }
+}
+
+function drawBaskervilleHuman(x, y, scale) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(scale, scale);
+  ctx.fillStyle = "#b8a183";
+  ctx.fillRect(-16, -44, 32, 28);
+  ctx.fillStyle = "#172033";
+  ctx.fillRect(-18, -50, 36, 8);
+  ctx.fillRect(-7, -33, 6, 6);
+  ctx.fillRect(7, -33, 6, 6);
+  ctx.fillRect(-8, -20, 18, 5);
+  ctx.fillStyle = "#39465c";
+  ctx.fillRect(-18, -16, 36, 54);
+  ctx.fillStyle = "#172033";
+  ctx.fillRect(-14, 38, 10, 42);
+  ctx.fillRect(6, 38, 10, 42);
+  ctx.restore();
+}
+
+function drawFirstPersonTree(x, y) {
+  ctx.fillStyle = "#6a472c";
+  ctx.fillRect(x - 12, y - 80, 24, 120);
+  ctx.fillStyle = "#2f6c45";
+  ctx.fillRect(x - 55, y - 142, 110, 74);
+  ctx.fillRect(x - 38, y - 176, 76, 52);
+}
+
+function drawGamblingInterior() {
+  ctx.fillStyle = "#6b523d";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  drawPixelText("Gambling", 150, 55, 32, "#fff3b5");
+  ctx.fillStyle = "#9a714e";
+  ctx.fillRect(390, 315, 260, 90);
+  ctx.strokeStyle = "#172033";
+  ctx.lineWidth = 5;
+  ctx.strokeRect(390, 315, 260, 90);
+  ctx.fillStyle = "#fff3b5";
+  ctx.fillRect(435, 340, 34, 48);
+  ctx.fillRect(500, 340, 34, 48);
+  ctx.fillRect(565, 340, 34, 48);
+  drawSeatedCardPlayer(300, 360);
+  drawSeatedCardPlayer(700, 360);
+  drawPixelText("Space/click to leave", canvas.width / 2, 570, 22, "#fff3b5");
+  drawFirstPersonHud();
+}
+
+function drawSeatedCardPlayer(x, y) {
+  drawBaskervilleHuman(x, y, 1);
+  ctx.fillStyle = "#4e3828";
+  ctx.fillRect(x - 32, y + 46, 64, 18);
+  ctx.fillStyle = "#fff3b5";
+  ctx.fillRect(x - 50, y - 8, 22, 30);
+  ctx.fillRect(x + 30, y - 8, 22, 30);
+}
+
+function drawClockInterior() {
+  ctx.fillStyle = "#2b3040";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = "#1a1e2a";
+  ctx.fillRect(120, 120, 784, 365);
+  ctx.fillStyle = "#f7d66b";
+  ctx.fillRect(470, 70, 84, 84);
+  ctx.fillStyle = "#172033";
+  ctx.fillRect(508, 88, 6, 42);
+  ctx.fillRect(512, 125, 28, 6);
+  drawPixelText("Tim is hiding inside the clock building", canvas.width / 2, 540, 24, "#fff3b5");
+  drawPixelText("Space/click to go outside", canvas.width / 2, 575, 20, "#fff3b5");
+  drawFirstPersonHud();
+}
+
+function drawFirstPersonHud() {
+  ctx.fillStyle = "#ff6969";
+  ctx.font = "800 30px \"Courier New\", monospace";
+  ctx.textAlign = "left";
+  ctx.fillText("♥".repeat(Math.max(0, hearts)), 32, 600);
+  ctx.fillStyle = "#f6f1df";
+  ctx.fillRect(326, 540, 62, 62);
+  ctx.strokeStyle = "#172033";
+  ctx.lineWidth = 4;
+  ctx.strokeRect(326, 540, 62, 62);
+  ctx.fillStyle = "#172033";
+  ctx.font = "800 11px \"Courier New\", monospace";
+  ctx.fillText("Interact", 338, 558);
+  ctx.fillStyle = "#f7d66b";
+  ctx.fillRect(350, 570, 16, 24);
 }
 
 function draw() {
@@ -1276,6 +1567,11 @@ function draw() {
 
   if (mazeMode) {
     drawMaze();
+    return;
+  }
+
+  if (isFirstPerson()) {
+    drawFirstPerson();
     return;
   }
 
@@ -1327,6 +1623,12 @@ window.addEventListener("keydown", (event) => {
     return;
   }
 
+  if (event.code === "Space") {
+    event.preventDefault();
+    interact();
+    return;
+  }
+
   keys.add(event.key.toLowerCase());
 });
 
@@ -1343,6 +1645,11 @@ canvas.addEventListener("pointerdown", (event) => {
     } else {
       showMessage("Click inside one of the named places to start.", 1500);
     }
+    return;
+  }
+
+  if (isFirstPerson()) {
+    handleFirstPersonClick(event);
     return;
   }
 
@@ -1377,6 +1684,71 @@ function selectionPointFromEvent(event) {
     y: (canvasY - offsetY) / scale,
   };
 }
+
+function handleFirstPersonClick(event) {
+  const rect = canvas.getBoundingClientRect();
+  const x = ((event.clientX - rect.left) / rect.width) * canvas.width;
+  const y = ((event.clientY - rect.top) / rect.height) * canvas.height;
+
+  if (firstPersonPlace !== "street") {
+    interact();
+    return;
+  }
+
+  if (selectedRegion?.name === "Baskerville" && x >= 80 && x <= 220 && y >= 110 && y <= 430) {
+    firstPersonPlace = "gambling";
+    showMessage("Tim opened the Gambling building.", 1500);
+    return;
+  }
+
+  if (selectedRegion?.name === "Baskerville" && x >= 830 && x <= 980 && y >= 80 && y <= 410) {
+    firstPersonPlace = "clock";
+    showMessage("Tim opened the clock building door and hid inside.", 1500);
+    return;
+  }
+
+  if (x >= 326 && x <= 388 && y >= 540 && y <= 602) {
+    interact();
+  }
+}
+
+mobileControls.addEventListener("pointerdown", (event) => {
+  const control = event.target.closest("[data-control]")?.dataset.control;
+  if (!control) {
+    return;
+  }
+  event.preventDefault();
+
+  if (control === "interact") {
+    interact();
+    return;
+  }
+
+  if (control === "up" && isFirstPerson()) {
+    climbThing();
+  }
+
+  const keyByControl = {
+    up: "arrowup",
+    down: "arrowdown",
+    left: "arrowleft",
+    right: "arrowright",
+  };
+  keys.add(keyByControl[control]);
+});
+
+mobileControls.addEventListener("pointerup", (event) => {
+  const control = event.target.closest("[data-control]")?.dataset.control;
+  const keyByControl = {
+    up: "arrowup",
+    down: "arrowdown",
+    left: "arrowleft",
+    right: "arrowright",
+  };
+  if (control && keyByControl[control]) {
+    keys.delete(keyByControl[control]);
+  }
+});
 
 restart.addEventListener("click", resetGame);
 nextLevel.addEventListener("click", () => startLevel(currentLevelIndex + 1));

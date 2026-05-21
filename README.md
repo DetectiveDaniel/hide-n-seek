@@ -9,7 +9,9 @@ Controls:
 - Click a place on the map to start that place's mission.
 - Arrow keys or WASD to move.
 - Click or tap the map to walk toward that spot.
-- Press F5 to switch between Map View and Chase View.
+- Press F5 to switch between Map View and First Person.
+- In First Person, click doors or press Space to interact.
+- On mobile, the on-screen top arrow can climb trees and other climbable things.
 - Found people follow Tim around.
 - Finding Mrs Grove wins instantly.
 - After Mrs Grove is found, use Next Level to play the same seek list in a new biome.
