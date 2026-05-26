@@ -50,6 +50,25 @@ canvas {
   image-rendering: crisp-edges;
 }
 
+.remove-abilities {
+  position: absolute;
+  left: 10px;
+  top: 10px;
+  z-index: 3;
+  min-height: 34px;
+  padding: 6px 10px;
+  border: 2px solid #172033;
+  background: #f6f1df;
+  color: #172033;
+  font-size: 0.78rem;
+  box-shadow: 3px 3px 0 rgba(23, 32, 51, 0.45);
+}
+
+.remove-abilities:hover,
+.remove-abilities:focus-visible {
+  background: #fff3b5;
+}
+
 .panel {
   display: flex;
   flex-direction: column;

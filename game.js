@@ -8,6 +8,7 @@ const perspectiveName = document.querySelector("#perspectiveName");
 const message = document.querySelector("#message");
 const restart = document.querySelector("#restart");
 const nextLevel = document.querySelector("#nextLevel");
+const removeAbilities = document.querySelector("#removeAbilities");
 const mobileControls = document.querySelector(".mobile-controls");
 
 const world = { width: 2200, height: 1500 };
@@ -182,11 +183,11 @@ let perspectiveIndex = 0;
 let gameStarted = false;
 let selectedRegion = null;
 let player;
-let people;
-let scenery;
-let hazards;
-let pickups;
-let camera;
+let people = [];
+let scenery = [];
+let hazards = [];
+let pickups = [];
+let camera = { x: 0, y: 0 };
 let gameWon;
 let flashTimer;
 let hearts;
@@ -196,6 +197,19 @@ let mazeMode;
 let superPower;
 let keysReadyAnnounced;
 let firstPersonPlace = "street";
+let heavenMode = false;
+let heavenPlace = "clouds";
+let coins = 0;
+let revivers = 0;
+let aiCompanions = 0;
+let missionStart = null;
+let screen = "menu";
+let cheatsEnabled = false;
+let portalCompleted = false;
+let zapEffects = [];
+let slashEffects = [];
+let chocBoosts = 0;
+let hasZapSlash = false;
 
 const mazeWalls = [
   [0, 0, 1024, 24],
@@ -448,6 +462,7 @@ function createScenery() {
 }
 
 function startLevel(index) {
+  screen = "map";
   currentLevelIndex = (index + biomes.length) % biomes.length;
   gameStarted = false;
   selectedRegion = null;
@@ -463,9 +478,15 @@ function startLevel(index) {
   damageCooldown = 0;
   snowDrainTimer = 0;
   mazeMode = false;
-  superPower = false;
+  superPower = hasZapSlash;
   keysReadyAnnounced = false;
   firstPersonPlace = "street";
+  heavenMode = false;
+  heavenPlace = "clouds";
+  missionStart = null;
+  portalCompleted = false;
+  zapEffects = [];
+  slashEffects = [];
   nextLevel.disabled = true;
   levelName.textContent = "Choose a Place";
   perspectiveName.textContent = "Map Select";
@@ -483,12 +504,15 @@ function startMission(region) {
     x: start.x,
     y: start.y,
     radius: 18,
-    speed: region.name === "Snow" ? 2.55 : 4,
+    speed: baseSpeedForRegion(region) + chocBoosts * 1.2,
     trail: [],
     mazeX: 70,
     mazeY: 560,
     height: 0,
+    fpOffset: 0,
+    fpDepth: 0,
   };
+  missionStart = { x: start.x, y: start.y, region };
 
   setupMissionObjects(region);
   people = region.name === "The Ruins"
@@ -503,9 +527,14 @@ function startMission(region) {
   damageCooldown = 0;
   snowDrainTimer = 0;
   mazeMode = false;
-  superPower = false;
+  superPower = hasZapSlash;
   keysReadyAnnounced = false;
   firstPersonPlace = "street";
+  heavenMode = false;
+  heavenPlace = "clouds";
+  portalCompleted = false;
+  zapEffects = [];
+  slashEffects = [];
   nextLevel.disabled = true;
   levelName.textContent = `${region.name} Mission`;
   perspectiveName.textContent = activePerspective().name;
@@ -559,7 +588,7 @@ function showMessage(text, duration = 1700) {
 }
 
 function damagePlayer(amount, text) {
-  if (!gameStarted || gameWon || superPower || damageCooldown > 0) {
+  if (!gameStarted || gameWon || superPower || cheatsEnabled || damageCooldown > 0) {
     return;
   }
 
@@ -569,13 +598,65 @@ function damagePlayer(amount, text) {
   showMessage(text, 1300);
 
   if (hearts <= 0) {
-    gameWon = true;
-    nextLevel.disabled = false;
-    showMessage("Tim is out of hearts. Restart or choose another place.", 999999);
+    goToHeaven("Tim is out of hearts.");
   }
 }
 
+function goToHeaven(reason) {
+  heavenMode = true;
+  heavenPlace = "clouds";
+  gameWon = true;
+  coins += 3;
+  updateHearts();
+  showMessage(`${reason} Tim went to heaven. You got 3 heaven coins.`, 2600);
+}
+
+function reviveFromHeaven() {
+  if (revivers <= 0 || !missionStart) {
+    showMessage("You need a Reviver first.", 1400);
+    return;
+  }
+
+  revivers -= 1;
+  heavenMode = false;
+  heavenPlace = "clouds";
+  gameWon = false;
+  hearts = 5;
+  player.x = missionStart.x;
+  player.y = missionStart.y;
+  player.fpOffset = 0;
+  player.fpDepth = 0;
+  firstPersonPlace = "street";
+  updateHearts();
+  updateCamera();
+  showMessage("Reviver used. Tim respawned where he started.", 1800);
+}
+
+function leaveHeaven() {
+  if (!missionStart) {
+    showMessage("Choose a place first.", 1200);
+    return;
+  }
+
+  heavenMode = false;
+  heavenPlace = "clouds";
+  gameWon = false;
+  hearts = 5;
+  player.x = missionStart.x;
+  player.y = missionStart.y;
+  player.fpOffset = 0;
+  player.fpDepth = 0;
+  firstPersonPlace = "street";
+  updateHearts();
+  updateCamera();
+  showMessage("Tim came out of Heaven.", 1600);
+}
+
 function updatePlayer() {
+  if (heavenMode) {
+    return;
+  }
+
   if (!gameStarted || gameWon) {
     return;
   }
@@ -627,6 +708,8 @@ function updateFirstPersonPlayer() {
   const speed = superPower ? player.speed * 1.35 : player.speed;
   player.x = clamp(player.x + (dx / length) * speed, player.radius, world.width - player.radius);
   player.y = clamp(player.y + (dy / length) * speed, player.radius, world.height - player.radius);
+  player.fpOffset = clamp(player.fpOffset - (dx / length) * speed * 7, -420, 420);
+  player.fpDepth = clamp(player.fpDepth - (dy / length) * speed * 5, -120, 170);
   player.height = Math.max(0, player.height - 0.03);
   player.trail.unshift({ x: player.x, y: player.y });
   player.trail.length = 420;
@@ -644,6 +727,16 @@ function climbThing() {
 }
 
 function interact() {
+  if (heavenMode) {
+    if (heavenPlace === "items") {
+      heavenPlace = "clouds";
+      showMessage("Back in heaven.", 1000);
+      return;
+    }
+    reviveFromHeaven();
+    return;
+  }
+
   if (!gameStarted || gameWon) {
     return;
   }
@@ -656,6 +749,22 @@ function interact() {
   if (firstPersonPlace !== "street") {
     firstPersonPlace = "street";
     showMessage("Tim went back outside.", 1200);
+    return;
+  }
+
+  const closeTarget = people.find((person) => !person.found && person.target && distance(player, person) < 130);
+  if (closeTarget) {
+    closeTarget.found = true;
+    renderList();
+    showMessage(`${closeTarget.name} found in first person!`, 1400);
+    const missionComplete = people
+      .filter((candidate) => candidate.target)
+      .every((candidate) => candidate.found);
+    if (missionComplete) {
+      gameWon = true;
+      nextLevel.disabled = false;
+      showMessage(`${selectedRegion.name} mission complete!`, 999999);
+    }
     return;
   }
 
@@ -689,8 +798,14 @@ function updateMazePlayer() {
   if (player.mazeX > canvas.width - 78 && player.mazeY < 86) {
     mazeMode = false;
     superPower = true;
+    hasZapSlash = true;
+    portalCompleted = true;
     player.speed = 5.2;
-    showMessage("Maze complete. Tim has super powers!", 2600);
+    player.x = selectedRegion.text[0] - 170;
+    player.y = selectedRegion.text[1] + 120;
+    player.trail = [];
+    updateCamera();
+    showMessage("Maze complete. Tim unlocked zapping and slashing!", 2600);
   }
 }
 
@@ -746,9 +861,7 @@ function updateHazards() {
     if (hazard.type === "lava" && distance(player, hazard) < hazard.radius + player.radius) {
       hearts = 0;
       updateHearts();
-      gameWon = true;
-      nextLevel.disabled = false;
-      showMessage("Tim fell in lava. Instant game over!", 999999);
+      goToHeaven("Tim fell in lava.");
     }
 
     if (hazard.type === "human") {
@@ -758,9 +871,7 @@ function updateHazards() {
       if (toPlayer < 34) {
         hearts = 0;
         updateHearts();
-        gameWon = true;
-        nextLevel.disabled = false;
-        showMessage("The Baskerville human caught Tim!", 999999);
+        goToHeaven("The Baskerville human caught Tim.");
       }
     }
 
@@ -796,6 +907,9 @@ function updateHazards() {
     }
 
     if (hazard.type === "portal" && distance(player, hazard) < hazard.radius) {
+      if (portalCompleted) {
+        continue;
+      }
       if (pickups.some((pickup) => !pickup.found)) {
         showMessage("Find all the magic keys before the question mark.", 1200);
         continue;
@@ -806,6 +920,63 @@ function updateHazards() {
       showMessage("Tim fell into the question-mark maze!", 1800);
     }
   }
+
+  updateAiCompanions();
+}
+
+function updateAiCompanions() {
+  if (aiCompanions <= 0 || !hazards.length) {
+    return;
+  }
+
+  const harmful = hazards.filter((hazard) => ["sniper", "human", "dragon"].includes(hazard.type));
+  if (!harmful.length) {
+    return;
+  }
+
+  for (let i = 0; i < Math.min(aiCompanions, harmful.length); i += 1) {
+    const hazard = harmful[i];
+    hazard.timer += 1;
+    if (hazard.timer > 360) {
+      hazards.splice(hazards.indexOf(hazard), 1);
+      showMessage("An AI companion slowly defeated an enemy.", 1200);
+    }
+  }
+}
+
+function useZap() {
+  if (!superPower || !gameStarted || gameWon || mazeMode) {
+    return;
+  }
+
+  const target = hazards
+    .filter((hazard) => ["sniper", "human", "dragon"].includes(hazard.type))
+    .sort((a, b) => distance(player, a) - distance(player, b))[0];
+
+  if (!target || distance(player, target) > 520) {
+    showMessage("No enemy close enough to zap.", 900);
+    return;
+  }
+
+  zapEffects.push({ x1: player.x, y1: player.y, x2: target.x, y2: target.y, life: 18 });
+  hazards.splice(hazards.indexOf(target), 1);
+  showMessage("ZAP! Tim blasted an enemy.", 900);
+}
+
+function useSlash() {
+  if (!superPower || !gameStarted || gameWon || mazeMode) {
+    return;
+  }
+
+  let hit = false;
+  for (let i = hazards.length - 1; i >= 0; i -= 1) {
+    if (["sniper", "human", "dragon"].includes(hazards[i].type) && distance(player, hazards[i]) < 150) {
+      hazards.splice(i, 1);
+      hit = true;
+    }
+  }
+  slashEffects.push({ x: player.x, y: player.y, life: 18 });
+  showMessage(hit ? "SLASH! Nearby enemies were cut down." : "Slash missed.", 900);
 }
 
 function updateProjectiles(projectiles, damage, text) {
@@ -1180,6 +1351,34 @@ function drawHazards() {
   }
 }
 
+function drawSuperPowerEffects() {
+  for (const effect of zapEffects) {
+    ctx.strokeStyle = "#49d6ff";
+    ctx.lineWidth = 7;
+    ctx.beginPath();
+    ctx.moveTo(effect.x1 - camera.x, effect.y1 - camera.y);
+    ctx.lineTo((effect.x1 + effect.x2) / 2 - camera.x, effect.y1 - 35 - camera.y);
+    ctx.lineTo(effect.x2 - camera.x, effect.y2 - camera.y);
+    ctx.stroke();
+    effect.life -= 1;
+  }
+
+  for (const effect of slashEffects) {
+    const x = effect.x - camera.x;
+    const y = effect.y - camera.y;
+    ctx.strokeStyle = "#fff3b5";
+    ctx.lineWidth = 8;
+    ctx.beginPath();
+    ctx.moveTo(x - 70, y + 45);
+    ctx.lineTo(x + 75, y - 45);
+    ctx.stroke();
+    effect.life -= 1;
+  }
+
+  zapEffects = zapEffects.filter((effect) => effect.life > 0);
+  slashEffects = slashEffects.filter((effect) => effect.life > 0);
+}
+
 function drawPickups() {
   for (const pickup of pickups) {
     if (pickup.found) {
@@ -1241,6 +1440,60 @@ function drawPlayer() {
   ctx.font = "800 15px \"Courier New\", monospace";
   ctx.textAlign = "center";
   ctx.fillText("Tim", x, y - 31);
+}
+
+function drawAiRobot(x, y, scale = 1) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(scale, scale);
+  ctx.fillStyle = "rgba(0, 0, 0, 0.22)";
+  ctx.fillRect(-24, 54, 48, 8);
+
+  ctx.fillStyle = "#5c8796";
+  ctx.fillRect(-24, -58, 48, 42);
+  ctx.fillStyle = "#bdeaf0";
+  ctx.fillRect(-18, -52, 36, 30);
+  ctx.fillStyle = "#12344a";
+  ctx.fillRect(-12, -46, 24, 18);
+  ctx.fillStyle = "#49d6ff";
+  ctx.fillRect(-7, -40, 4, 4);
+  ctx.fillRect(5, -40, 4, 4);
+  ctx.fillRect(-5, -32, 10, 3);
+
+  ctx.fillStyle = "#bdeaf0";
+  ctx.fillRect(-30, -10, 60, 38);
+  ctx.fillStyle = "#7daab4";
+  ctx.fillRect(-36, -6, 8, 34);
+  ctx.fillRect(28, -6, 8, 34);
+  ctx.fillRect(-48, 8, 14, 28);
+  ctx.fillRect(34, 8, 14, 28);
+  ctx.fillStyle = "#333";
+  ctx.fillRect(-44, 36, 7, 14);
+  ctx.fillRect(37, 36, 7, 14);
+
+  ctx.fillStyle = "#263a45";
+  ctx.fillRect(-18, 28, 10, 34);
+  ctx.fillRect(8, 28, 10, 34);
+  ctx.fillStyle = "#8fc7d0";
+  ctx.fillRect(-28, 58, 24, 18);
+  ctx.fillRect(4, 58, 24, 18);
+  ctx.fillStyle = "#5c8796";
+  ctx.fillRect(-25, -68, 50, 8);
+  ctx.fillRect(-38, -38, 9, 5);
+  ctx.fillRect(29, -38, 9, 5);
+  ctx.restore();
+}
+
+function drawAiCompanions() {
+  if (!gameStarted || !player || aiCompanions <= 0) {
+    return;
+  }
+
+  const baseX = player.x - camera.x;
+  const baseY = player.y - camera.y;
+  for (let i = 0; i < aiCompanions; i += 1) {
+    drawAiRobot(baseX - 44 - i * 34, baseY + 18 + (i % 2) * 10, 0.42);
+  }
 }
 
 function drawMiniMap() {
@@ -1323,6 +1576,60 @@ function drawSelectionMap() {
   ctx.fillText("CLICK A PLACE TO START", canvas.width / 2, canvas.height - 28);
 }
 
+function drawMenuButton(x, y, width, height, label) {
+  ctx.fillStyle = "#f6f1df";
+  ctx.fillRect(x, y, width, height);
+  ctx.strokeStyle = "#172033";
+  ctx.lineWidth = 5;
+  ctx.strokeRect(x, y, width, height);
+  drawPixelText(label, x + width / 2, y + height / 2, 30, "#172033");
+}
+
+function drawMainMenu() {
+  ctx.imageSmoothingEnabled = false;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = "#101621";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  drawCloud(100, 96, 0.75);
+  drawCloud(760, 110, 0.65);
+  drawPixelText("HIDE 'N' SEEK!", canvas.width / 2, 135, 52, "#fff3b5");
+  drawMenuButton(362, 230, 300, 68, "START");
+  drawMenuButton(362, 325, 300, 68, "SETTINGS");
+  drawMenuButton(362, 420, 300, 68, "HOW TO PLAY");
+}
+
+function drawSettings() {
+  ctx.imageSmoothingEnabled = false;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = "#202616";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  drawPixelText("SETTINGS", canvas.width / 2, 105, 44, "#fff3b5");
+  ctx.fillStyle = "#f6f1df";
+  ctx.fillRect(250, 215, 220, 80);
+  ctx.strokeStyle = "#172033";
+  ctx.lineWidth = 5;
+  ctx.strokeRect(250, 215, 220, 80);
+  drawPixelText("Cheats", 360, 255, 28, "#172033");
+  drawMenuButton(510, 215, 110, 80, "YES");
+  drawMenuButton(645, 215, 110, 80, "NO");
+  drawPixelText(`Cheats are ${cheatsEnabled ? "ON" : "OFF"}`, canvas.width / 2, 345, 25, "#fff3b5");
+  drawMenuButton(362, 470, 300, 62, "BACK");
+}
+
+function drawHowToPlay() {
+  ctx.imageSmoothingEnabled = false;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = "#101621";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  drawPixelText("HOW TO PLAY", canvas.width / 2, 84, 42, "#fff3b5");
+  drawPixelText("Click a place on the map to start a mission.", canvas.width / 2, 170, 22, "#f6f1df");
+  drawPixelText("WASD or arrows move Tim.", canvas.width / 2, 215, 22, "#f6f1df");
+  drawPixelText("F5 switches to first person.", canvas.width / 2, 260, 22, "#f6f1df");
+  drawPixelText("Space interacts with doors, people, and shops.", canvas.width / 2, 305, 22, "#f6f1df");
+  drawPixelText("Find the mission targets and survive the dangers.", canvas.width / 2, 350, 22, "#f6f1df");
+  drawMenuButton(362, 470, 300, 62, "BACK");
+}
+
 function drawMaze() {
   ctx.imageSmoothingEnabled = false;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -1399,27 +1706,91 @@ function drawFirstPerson() {
     drawGenericFirstPerson();
   }
 
+  drawFirstPersonPeople();
   drawFirstPersonHud();
 }
 
 function drawBaskervilleStreet() {
-  drawGamblingBuilding(80, 110, 140, 320);
-  drawBaskervilleHuman(360, 245, 0.9);
-  drawBaskervilleHuman(545, 235, 1.35);
-  drawBaskervilleHuman(700, 145, 0.7);
-  drawClockBuilding(830, 88, 150, 320);
-  drawFirstPersonTree(620, 445);
+  const ox = player.fpOffset;
+  const depth = player.fpDepth;
+  const scale = clamp(1 + depth / 420, 0.75, 1.38);
+  const horizon = 36 - depth * 0.24 - player.height * 60;
+
+  ctx.fillStyle = "#d5cedf";
+  ctx.fillRect(0, 0, canvas.width, 430 + depth * 0.18);
+  ctx.fillStyle = "#bdb5c7";
+  ctx.fillRect(0, 430 + depth * 0.18, canvas.width, 210);
+  ctx.fillStyle = "rgba(23, 32, 51, 0.16)";
+  ctx.fillRect(0, 495 + depth * 0.25, canvas.width, 26);
+
+  drawGamblingBuilding(80 + ox, 110 + horizon, 140 * scale, 320 * scale);
+  drawBaskervilleHuman(360 + ox * 0.78, 245 + horizon + depth * 0.08, 0.9 * scale);
+  drawBaskervilleHuman(545 + ox * 0.52, 235 + horizon + depth * 0.1, 1.35 * scale);
+  drawBaskervilleHuman(700 + ox * 0.65, 145 + horizon + depth * 0.04, 0.7 * scale);
+  drawClockBuilding(830 + ox, 88 + horizon, 150 * scale, 320 * scale);
+  drawFirstPersonTree(620 + ox * 0.9, 445 + horizon + depth * 0.2, scale);
 
   if (player.height > 0.2) {
     drawPixelText("CLIMBING", 514, 82, 26, "#172033");
   }
+  drawPixelText("WASD / arrows move in first person", canvas.width / 2, 34, 20, "#172033");
 }
 
 function drawGenericFirstPerson() {
-  drawFirstPersonTree(185, 400);
-  drawFirstPersonTree(780, 390);
+  const ox = player.fpOffset;
+  const depth = player.fpDepth;
+  drawFirstPersonTree(185 + ox, 400 + depth * 0.2, 1);
+  drawFirstPersonTree(780 + ox * 0.7, 390 + depth * 0.15, 1);
   drawPixelText(`${selectedRegion.name} first person`, canvas.width / 2, 130, 34, "#172033");
   drawPixelText("Space interacts. Top arrow climbs on mobile.", canvas.width / 2, 185, 22, "#172033");
+}
+
+function firstPersonProjection(entity) {
+  const dx = entity.x - player.x;
+  const dy = entity.y - player.y;
+  const forward = clamp(260 - dy * 0.22 + player.fpDepth * 0.9, 70, 440);
+  const side = canvas.width / 2 + dx * 0.28 + player.fpOffset * 0.5;
+  const distanceToEntity = Math.max(60, distance(player, entity));
+  const scale = clamp(2.2 - distanceToEntity / 360, 0.55, 1.8);
+  return { x: side, y: forward, scale, distanceToEntity };
+}
+
+function drawFirstPersonPeople() {
+  const visiblePeople = people
+    .filter((person) => !person.found && distance(player, person) < 760)
+    .map((person) => ({ person, view: firstPersonProjection(person) }))
+    .filter(({ view }) => view.x > -120 && view.x < canvas.width + 120)
+    .sort((a, b) => b.view.distanceToEntity - a.view.distanceToEntity);
+
+  for (const { person, view } of visiblePeople) {
+    drawFirstPersonPerson(person, view.x, view.y, view.scale);
+  }
+}
+
+function drawFirstPersonPerson(person, x, y, scale) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(scale, scale);
+  ctx.globalAlpha = person.target ? 1 : 0.55;
+  ctx.fillStyle = "rgba(0, 0, 0, 0.24)";
+  ctx.fillRect(-24, 60, 48, 8);
+  ctx.fillStyle = person.color;
+  ctx.fillRect(-18, -4, 36, 46);
+  ctx.fillRect(-14, 42, 10, 28);
+  ctx.fillRect(4, 42, 10, 28);
+  ctx.fillStyle = "#f1c59a";
+  ctx.fillRect(-15, -34, 30, 28);
+  ctx.fillStyle = "#2a1b14";
+  ctx.fillRect(-18, -42, 36, 10);
+  ctx.fillStyle = "#111";
+  ctx.fillRect(-8, -22, 5, 5);
+  ctx.fillRect(6, -22, 5, 5);
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = person.target ? "#fff3b5" : "#d7ddb8";
+  ctx.font = "800 13px \"Courier New\", monospace";
+  ctx.textAlign = "center";
+  ctx.fillText(person.name, 0, -54);
+  ctx.restore();
 }
 
 function drawGamblingBuilding(x, y, w, h) {
@@ -1488,12 +1859,16 @@ function drawBaskervilleHuman(x, y, scale) {
   ctx.restore();
 }
 
-function drawFirstPersonTree(x, y) {
+function drawFirstPersonTree(x, y, scale = 1) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(scale, scale);
   ctx.fillStyle = "#6a472c";
-  ctx.fillRect(x - 12, y - 80, 24, 120);
+  ctx.fillRect(-12, -80, 24, 120);
   ctx.fillStyle = "#2f6c45";
-  ctx.fillRect(x - 55, y - 142, 110, 74);
-  ctx.fillRect(x - 38, y - 176, 76, 52);
+  ctx.fillRect(-55, -142, 110, 74);
+  ctx.fillRect(-38, -176, 76, 52);
+  ctx.restore();
 }
 
 function drawGamblingInterior() {
@@ -1554,11 +1929,165 @@ function drawFirstPersonHud() {
   ctx.fillText("Interact", 338, 558);
   ctx.fillStyle = "#f7d66b";
   ctx.fillRect(350, 570, 16, 24);
+
+  if (superPower) {
+    ctx.fillStyle = "#49d6ff";
+    ctx.font = "800 16px \"Courier New\", monospace";
+    ctx.fillText("F: ZAP   K: SLASH", 425, 588);
+  }
+
+  for (let i = 0; i < aiCompanions; i += 1) {
+    drawAiRobot(760 + i * 48, 578, 0.34);
+  }
+}
+
+function drawHeaven() {
+  ctx.imageSmoothingEnabled = false;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = "#31c4ee";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  for (let y = 90; y < 390; y += 90) {
+    for (let x = 20; x < canvas.width; x += 145) {
+      ctx.fillStyle = "rgba(255,255,255,0.45)";
+      ctx.fillRect(x, y, 18, 10);
+      ctx.fillRect(x + 28, y - 14, 14, 9);
+    }
+  }
+
+  for (let x = -30; x < canvas.width; x += 92) {
+    drawCloud(x, 420 + Math.sin(x) * 12, 1.2);
+  }
+  drawCloud(120, 180, 0.9);
+  drawCloud(330, 120, 0.75);
+  drawCloud(690, 165, 0.85);
+  drawCloud(835, 105, 0.55);
+
+  drawHeavenHuman(155, 375);
+  drawHeavenHuman(485, 350);
+  drawHeavenHuman(805, 380);
+  drawHeavenShop(260, 275, "Coin Shop", "#fff3b5");
+  drawHeavenShop(595, 275, "Item Shop", "#f7d66b");
+
+  if (heavenPlace === "items") {
+    drawItemShopPanel();
+  } else {
+    drawHeavenPanel();
+  }
+
+  drawGoOutOfHeavenButton();
+}
+
+function drawCloud(x, y, scale) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(scale, scale);
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 22, 120, 34);
+  ctx.fillRect(20, 5, 38, 35);
+  ctx.fillRect(58, -8, 48, 48);
+  ctx.fillRect(95, 12, 45, 38);
+  ctx.restore();
+}
+
+function drawHeavenHuman(x, y) {
+  ctx.fillStyle = "#f1c59a";
+  ctx.fillRect(x - 12, y - 42, 24, 22);
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(x - 24, y - 18, 48, 44);
+  ctx.fillStyle = "#172033";
+  ctx.fillRect(x - 6, y - 34, 4, 4);
+  ctx.fillRect(x + 5, y - 34, 4, 4);
+  ctx.fillStyle = "#ffeeb0";
+  ctx.fillRect(x - 28, y - 56, 56, 6);
+}
+
+function drawHeavenShop(x, y, label, color) {
+  ctx.fillStyle = color;
+  ctx.fillRect(x, y, 150, 135);
+  ctx.strokeStyle = "#172033";
+  ctx.lineWidth = 4;
+  ctx.strokeRect(x, y, 150, 135);
+  drawPixelText(label, x + 75, y + 32, 18, "#172033");
+  ctx.fillStyle = "#9cc8ef";
+  ctx.fillRect(x + 28, y + 58, 36, 42);
+  ctx.fillRect(x + 86, y + 58, 36, 42);
+  ctx.fillStyle = "#8b5a3b";
+  ctx.fillRect(x + 58, y + 92, 34, 43);
+}
+
+function drawHeavenPanel() {
+  ctx.fillStyle = "rgba(16,22,33,0.82)";
+  ctx.fillRect(24, 24, 395, 120);
+  drawPixelText(`Heaven Coins: ${coins}`, 210, 55, 22, "#fff3b5");
+  drawPixelText(`Revivers: ${revivers}  AI: ${aiCompanions}`, 210, 86, 18, "#fff3b5");
+  drawPixelText("Click Item Shop to buy things", 210, 118, 17, "#fff3b5");
+}
+
+function drawGoOutOfHeavenButton() {
+  ctx.fillStyle = "#f6f1df";
+  ctx.fillRect(334, 536, 356, 62);
+  ctx.strokeStyle = "#172033";
+  ctx.lineWidth = 5;
+  ctx.strokeRect(334, 536, 356, 62);
+  drawPixelText("GO OUT OF HEAVEN", 512, 568, 24, "#172033");
+}
+
+function drawItemShopPanel() {
+  ctx.fillStyle = "rgba(16,22,33,0.9)";
+  ctx.fillRect(100, 48, 824, 180);
+  drawPixelText("ITEM SHOP", canvas.width / 2, 78, 26, "#fff3b5");
+  drawShopItem(150, 112, "Choc", "5 coins", "speed");
+  drawShopItem(410, 112, "AI Companion", "15 coins", "slowly fights");
+  drawShopItem(700, 112, "Reviver", "10 coins", "respawn");
+}
+
+function drawShopItem(x, y, name, cost, note) {
+  ctx.fillStyle = "#f6f1df";
+  ctx.fillRect(x, y, 190, 86);
+  ctx.strokeStyle = "#172033";
+  ctx.lineWidth = 4;
+  ctx.strokeRect(x, y, 190, 86);
+  drawPixelText(name, x + 95, y + 22, 18, "#172033");
+  drawPixelText(cost, x + 95, y + 48, 15, "#172033");
+  drawPixelText(note, x + 95, y + 69, 13, "#172033");
+  if (name === "Choc") {
+    ctx.fillStyle = "#5b321f";
+    ctx.fillRect(x + 16, y + 18, 32, 44);
+    ctx.fillStyle = "#7b4a2f";
+    ctx.fillRect(x + 20, y + 23, 10, 12);
+    ctx.fillRect(x + 32, y + 23, 10, 12);
+    ctx.fillRect(x + 20, y + 38, 10, 12);
+    ctx.fillRect(x + 32, y + 38, 10, 12);
+  }
+  if (name === "AI Companion") {
+    drawAiRobot(x + 33, y + 62, 0.38);
+  }
 }
 
 function draw() {
   ctx.imageSmoothingEnabled = false;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  if (screen === "menu") {
+    drawMainMenu();
+    return;
+  }
+
+  if (screen === "settings") {
+    drawSettings();
+    return;
+  }
+
+  if (screen === "howToPlay") {
+    drawHowToPlay();
+    return;
+  }
+
+  if (heavenMode) {
+    drawHeaven();
+    return;
+  }
 
   if (!gameStarted) {
     drawSelectionMap();
@@ -1581,11 +2110,13 @@ function draw() {
   drawScenery();
   drawPickups();
   drawHazards();
+  drawSuperPowerEffects();
 
   const sortedPeople = [...people].sort((a, b) => a.y - b.y);
   for (const person of sortedPeople) {
     drawPerson(person);
   }
+  drawAiCompanions();
   drawPlayer();
   ctx.restore();
   drawMiniMap();
@@ -1629,6 +2160,16 @@ window.addEventListener("keydown", (event) => {
     return;
   }
 
+  if (event.key.toLowerCase() === "f") {
+    useZap();
+    return;
+  }
+
+  if (event.key.toLowerCase() === "k") {
+    useSlash();
+    return;
+  }
+
   keys.add(event.key.toLowerCase());
 });
 
@@ -1637,6 +2178,16 @@ window.addEventListener("keyup", (event) => {
 });
 
 canvas.addEventListener("pointerdown", (event) => {
+  if (["menu", "settings", "howToPlay"].includes(screen)) {
+    handleMenuClick(event);
+    return;
+  }
+
+  if (heavenMode) {
+    handleHeavenClick(event);
+    return;
+  }
+
   if (!gameStarted) {
     const point = selectionPointFromEvent(event);
     const region = regionAt(point);
@@ -1685,6 +2236,57 @@ function selectionPointFromEvent(event) {
   };
 }
 
+function canvasPointFromEvent(event) {
+  const rect = canvas.getBoundingClientRect();
+  return {
+    x: ((event.clientX - rect.left) / rect.width) * canvas.width,
+    y: ((event.clientY - rect.top) / rect.height) * canvas.height,
+  };
+}
+
+function pointInRect(point, x, y, width, height) {
+  return point.x >= x && point.x <= x + width && point.y >= y && point.y <= y + height;
+}
+
+function handleMenuClick(event) {
+  const point = canvasPointFromEvent(event);
+
+  if (screen === "menu") {
+    if (pointInRect(point, 362, 230, 300, 68)) {
+      startLevel(currentLevelIndex);
+      return;
+    }
+    if (pointInRect(point, 362, 325, 300, 68)) {
+      screen = "settings";
+      return;
+    }
+    if (pointInRect(point, 362, 420, 300, 68)) {
+      screen = "howToPlay";
+      return;
+    }
+  }
+
+  if (screen === "settings") {
+    if (pointInRect(point, 510, 215, 110, 80)) {
+      cheatsEnabled = true;
+      showMessage("Cheats ON. Tim cannot get hurt.", 1300);
+      return;
+    }
+    if (pointInRect(point, 645, 215, 110, 80)) {
+      cheatsEnabled = false;
+      showMessage("Cheats OFF. Tim can get hurt.", 1300);
+      return;
+    }
+    if (pointInRect(point, 362, 470, 300, 62)) {
+      screen = "menu";
+    }
+  }
+
+  if (screen === "howToPlay" && pointInRect(point, 362, 470, 300, 62)) {
+    screen = "menu";
+  }
+}
+
 function handleFirstPersonClick(event) {
   const rect = canvas.getBoundingClientRect();
   const x = ((event.clientX - rect.left) / rect.width) * canvas.width;
@@ -1711,6 +2313,94 @@ function handleFirstPersonClick(event) {
     interact();
   }
 }
+
+function handleHeavenClick(event) {
+  const rect = canvas.getBoundingClientRect();
+  const x = ((event.clientX - rect.left) / rect.width) * canvas.width;
+  const y = ((event.clientY - rect.top) / rect.height) * canvas.height;
+
+  if (x >= 334 && x <= 690 && y >= 536 && y <= 598) {
+    leaveHeaven();
+    return;
+  }
+
+  if (heavenPlace === "items") {
+    if (y >= 112 && y <= 198 && x >= 150 && x <= 340) {
+      buyHeavenItem("choc");
+      return;
+    }
+    if (y >= 112 && y <= 198 && x >= 410 && x <= 600) {
+      buyHeavenItem("ai");
+      return;
+    }
+    if (y >= 112 && y <= 198 && x >= 700 && x <= 890) {
+      buyHeavenItem("reviver");
+      return;
+    }
+    heavenPlace = "clouds";
+    return;
+  }
+
+  if (x >= 595 && x <= 745 && y >= 275 && y <= 410) {
+    heavenPlace = "items";
+    showMessage("Welcome to the item shop.", 1200);
+    return;
+  }
+
+  if (x >= 260 && x <= 410 && y >= 275 && y <= 410) {
+    coins += 2;
+    showMessage("The coin shop gave Tim 2 heaven coins.", 1200);
+    return;
+  }
+
+  showMessage("Click GO OUT OF HEAVEN to come out.", 1200);
+}
+
+function buyHeavenItem(item) {
+  const prices = { choc: 5, ai: 15, reviver: 10 };
+  if (coins < prices[item]) {
+    showMessage("Not enough heaven coins.", 1200);
+    return;
+  }
+
+  coins -= prices[item];
+  if (item === "choc") {
+    chocBoosts += 1;
+    player.speed += 1.2;
+    showMessage("Bought Choc. Tim is faster!", 1400);
+  }
+  if (item === "ai") {
+    aiCompanions += 1;
+    showMessage("Bought an AI companion. It slowly fights enemies.", 1500);
+  }
+  if (item === "reviver") {
+    revivers += 1;
+    showMessage("Bought a Reviver.", 1200);
+  }
+}
+
+function baseSpeedForRegion(region) {
+  return region?.name === "Snow" ? 2.55 : 4;
+}
+
+function baseSpeedForCurrentRegion() {
+  return baseSpeedForRegion(selectedRegion);
+}
+
+function removeAllAbilities() {
+  aiCompanions = 0;
+  revivers = 0;
+  superPower = false;
+  hasZapSlash = false;
+  chocBoosts = 0;
+  if (player) {
+    player.speed = baseSpeedForCurrentRegion();
+    player.height = 0;
+  }
+  showMessage("All abilities removed.", 1300);
+}
+
+removeAbilities.addEventListener("click", removeAllAbilities);
 
 mobileControls.addEventListener("pointerdown", (event) => {
   const control = event.target.closest("[data-control]")?.dataset.control;
@@ -1753,5 +2443,4 @@ mobileControls.addEventListener("pointerup", (event) => {
 restart.addEventListener("click", resetGame);
 nextLevel.addEventListener("click", () => startLevel(currentLevelIndex + 1));
 
-startLevel(0);
 tick();

@@ -6,6 +6,8 @@ Open `index.html` in a browser to play.
 
 Controls:
 
+- Use the main menu buttons for START, SETTINGS, and HOW TO PLAY.
+- SETTINGS has a Cheats option. YES means Tim cannot get hurt; NO means Tim can get hurt.
 - Click a place on the map to start that place's mission.
 - Arrow keys or WASD to move.
 - Click or tap the map to walk toward that spot.
@@ -29,4 +31,8 @@ Region dangers:
 - Baskerville has angry humans that chase Tim.
 - Snow slows Tim down and slowly drains hearts.
 - The Runes has dragons that breathe fire for two-heart damage.
-- The Ruins has magic keys, then a question-mark maze that gives Tim super powers.
+- The Ruins has magic keys, then a question-mark maze that gives Tim zapping and slashing super powers. Press F to zap and K to slash.
+
+When Tim dies, he goes to Heaven. Heaven has other humans, a coin shop for in-game coins, an item shop with Choc, AI companions, and Revivers, plus a GO OUT OF HEAVEN button to come out.
+
+The top-left Remove all abilites button clears AI companions, Choc speed, super powers, and Revivers.
