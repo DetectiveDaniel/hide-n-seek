@@ -146,6 +146,70 @@ const mapRegions = [
   },
 ];
 
+const secondMapRegions = [
+  {
+    name: "Cheese Land",
+    fill: "#f2cf58",
+    text: [390, 250],
+    points: [[0, 0], [1080, 0], [1020, 390], [700, 520], [0, 560]],
+  },
+  {
+    name: "Rainforest",
+    fill: "#4f9d5a",
+    text: [1690, 270],
+    points: [[1080, 0], [2200, 0], [2200, 615], [1745, 650], [1020, 390]],
+  },
+  {
+    name: "Bridge Town",
+    fill: "#b68d66",
+    text: [525, 870],
+    points: [[0, 560], [700, 520], [940, 840], [675, 1500], [0, 1500]],
+  },
+  {
+    name: "Lightning City",
+    fill: "#7488b6",
+    text: [1345, 790],
+    points: [[700, 520], [1020, 390], [1745, 650], [1710, 960], [1200, 1080], [940, 840]],
+  },
+  {
+    name: "Scarve City",
+    fill: "#96a76f",
+    text: [1310, 1235],
+    points: [[675, 1500], [940, 840], [1200, 1080], [1710, 960], [2200, 1180], [2200, 1500]],
+  },
+];
+
+const adventureMaps = [
+  {
+    name: "Baskerville Map",
+    background: "#bfd0ef",
+    regions: mapRegions,
+    order: ["Snow", "The Runes", "Desert", "Forest", "Lava Lands", "The Ruins"],
+    landmarks: null,
+  },
+  {
+    name: "Different Map",
+    background: "#cbe4f2",
+    regions: secondMapRegions,
+    order: ["Cheese Land", "Bridge Town", "Rainforest", "Lightning City", "Scarve City"],
+    landmarks: [
+      { type: "cheese", x: 340, y: 250, size: 92 },
+      { type: "cheese", x: 760, y: 325, size: 72 },
+      { type: "tower", x: 1080, y: 140, size: 90 },
+      { type: "tree", x: 1500, y: 255, size: 96 },
+      { type: "pine", x: 1760, y: 345, size: 78 },
+      { type: "pine", x: 1990, y: 280, size: 82 },
+      { type: "bridge-house", x: 350, y: 965, size: 210 },
+      { type: "bolt", x: 1120, y: 670, size: 85 },
+      { type: "bolt", x: 1415, y: 865, size: 78 },
+      { type: "bolt", x: 1645, y: 760, size: 70 },
+      { type: "golf-flag", x: 1660, y: 1265, size: 120 },
+      { type: "hole", x: 980, y: 1270, size: 64 },
+      { type: "hole", x: 1180, y: 1375, size: 58 },
+    ],
+  },
+];
+
 const regionMissions = {
   Snow: ["Sophia", "Evie", "Nora"],
   Baskerville: ["Mrs Grove", "Andrea", "William"],
@@ -154,6 +218,11 @@ const regionMissions = {
   Forest: ["Lorenco", "Max", "Daniel A", "Connor"],
   "The Ruins": ["Magic Key 1", "Magic Key 2", "Magic Key 3"],
   "Lava Lands": ["Maya", "Max", "Connor", "Mrs Grove"],
+  "Cheese Land": ["Max", "Connor", "Maya"],
+  "Bridge Town": ["Andrea", "Clara", "Daniel G"],
+  Rainforest: ["William", "Dalia", "Nola"],
+  "Lightning City": ["Sophia", "Toby", "Evie"],
+  "Scarve City": ["Another Max", "Frank", "Glynis", "Bob"],
 };
 
 const fixedLandmarks = [
@@ -179,6 +248,12 @@ const perspectives = [
   { name: "First Person", zoom: 1 },
 ];
 let currentLevelIndex = 0;
+let currentMapIndex = 0;
+let unlockedRegionIndex = 0;
+let completedRegions = new Set();
+let teleportTimer = 0;
+let poisonTimer = 0;
+let poisoned = false;
 let perspectiveIndex = 0;
 let gameStarted = false;
 let selectedRegion = null;
@@ -263,6 +338,31 @@ function activeBiome() {
   return biomes[currentLevelIndex];
 }
 
+function activeMap() {
+  return adventureMaps[currentMapIndex];
+}
+
+function activeMapRegions() {
+  return activeMap().regions;
+}
+
+function activeMapLandmarks() {
+  return activeMap().landmarks || fixedLandmarks;
+}
+
+function currentUnlockOrder() {
+  return activeMap().order;
+}
+
+function isRegionUnlocked(region) {
+  const index = currentUnlockOrder().indexOf(region.name);
+  return index >= 0 && index <= unlockedRegionIndex;
+}
+
+function isRegionCompleted(region) {
+  return completedRegions.has(`${currentMapIndex}:${region.name}`);
+}
+
 function activePerspective() {
   return perspectives[perspectiveIndex];
 }
@@ -303,7 +403,7 @@ function pointInPolygon(point, polygon) {
 }
 
 function regionAt(point) {
-  return mapRegions.find((region) => pointInPolygon(point, region.points));
+  return activeMapRegions().find((region) => pointInPolygon(point, region.points));
 }
 
 function randomPointInRegion(region) {
@@ -336,7 +436,7 @@ function makeHazard(type, region, index = 0) {
     type,
     x: spot.x,
     y: spot.y,
-    radius: type === "storm" ? 76 : 28,
+    radius: type === "storm" ? 76 : type === "cheese" ? 42 : type === "hole" ? 48 : type === "lightning" ? 34 : 28,
     vx: randomBetween(-1.5, 1.5) || 1,
     vy: randomBetween(-1.5, 1.5) || 1,
     cooldown: 50 + index * 35,
@@ -376,6 +476,43 @@ function setupMissionObjects(region) {
       return { name, x: spot.x, y: spot.y, found: false, kind: "key" };
     });
     hazards = [{ type: "portal", x: region.text[0], y: region.text[1] - 120, radius: 54 }];
+  }
+
+  if (region.name === "Cheese Land") {
+    hazards = [
+      makeHazard("cheese", region, 0),
+      makeHazard("cheese", region, 1),
+      makeHazard("cheese", region, 2),
+      makeHazard("cheese", region, 3),
+    ];
+  }
+
+  if (region.name === "Bridge Town") {
+    hazards = [
+      makeHazard("hole", region, 0),
+      makeHazard("hole", region, 1),
+      makeHazard("hole", region, 2),
+      makeHazard("friendly", region, 0),
+      makeHazard("friendly", region, 1),
+      makeHazard("friendly", region, 2),
+    ];
+  }
+
+  if (region.name === "Rainforest") {
+    hazards = [makeHazard("bear", region, 0), makeHazard("bear", region, 1), makeHazard("bear", region, 2)];
+  }
+
+  if (region.name === "Lightning City") {
+    hazards = [
+      makeHazard("lightning", region, 0),
+      makeHazard("lightning", region, 1),
+      makeHazard("lightning", region, 2),
+      makeHazard("lightning", region, 3),
+    ];
+  }
+
+  if (region.name === "Scarve City") {
+    hazards = [makeHazard("golfer", region, 0), makeHazard("golfer", region, 1), makeHazard("golfer", region, 2)];
   }
 }
 
@@ -448,22 +585,25 @@ function makePerson(name, target, index, region = selectedRegion) {
 }
 
 function createScenery() {
-  const types = ["tree", "pine", "rock", "cactus", "snowdrift", "ruin", "lava-rock"];
+  const mapTypes = currentMapIndex === 1
+    ? ["tree", "pine", "rock", "cheese", "bolt", "hole"]
+    : ["tree", "pine", "rock", "cactus", "snowdrift", "ruin", "lava-rock"];
   const items = [];
   for (let i = 0; i < 80; i += 1) {
     items.push({
       x: randomBetween(40, world.width - 40),
       y: randomBetween(40, world.height - 40),
       size: randomBetween(18, 44),
-      type: types[Math.floor(randomBetween(0, types.length))],
+      type: mapTypes[Math.floor(randomBetween(0, mapTypes.length))],
     });
   }
-  return [...items, ...fixedLandmarks];
+  return [...items, ...activeMapLandmarks()];
 }
 
-function startLevel(index) {
+function startLevel(index = currentMapIndex) {
   screen = "map";
-  currentLevelIndex = (index + biomes.length) % biomes.length;
+  currentMapIndex = clamp(index, 0, adventureMaps.length - 1);
+  currentLevelIndex = currentMapIndex;
   gameStarted = false;
   selectedRegion = null;
   player = null;
@@ -485,17 +625,39 @@ function startLevel(index) {
   heavenPlace = "clouds";
   missionStart = null;
   portalCompleted = false;
+  poisonTimer = 0;
+  poisoned = false;
   zapEffects = [];
   slashEffects = [];
   nextLevel.disabled = true;
-  levelName.textContent = "Choose a Place";
+  levelName.textContent = activeMap().name;
   perspectiveName.textContent = "Map Select";
   renderList();
   updateHearts();
-  showMessage("Click a place on the map to start its mission.", 999999);
+  showMessage("Click an unlocked place on the map to start its mission.", 999999);
+}
+
+function beginAdventure() {
+  currentMapIndex = 0;
+  currentLevelIndex = 0;
+  unlockedRegionIndex = 0;
+  completedRegions = new Set();
+  teleportTimer = 0;
+  startLevel(0);
 }
 
 function startMission(region) {
+  if (!isRegionUnlocked(region)) {
+    const needed = currentUnlockOrder()[unlockedRegionIndex] || "the previous place";
+    showMessage(`${region.name} is locked. Complete ${needed} first.`, 1800);
+    return;
+  }
+
+  if (isRegionCompleted(region)) {
+    showMessage(`${region.name} is already complete. Try the next unlocked place.`, 1600);
+    return;
+  }
+
   selectedRegion = region;
   gameStarted = true;
   const levelTargets = activeTargetNames();
@@ -533,6 +695,8 @@ function startMission(region) {
   heavenMode = false;
   heavenPlace = "clouds";
   portalCompleted = false;
+  poisonTimer = 0;
+  poisoned = false;
   zapEffects = [];
   slashEffects = [];
   nextLevel.disabled = true;
@@ -548,6 +712,33 @@ function resetGame() {
   startLevel(currentLevelIndex);
 }
 
+function continueAdventure() {
+  if (!selectedRegion || !gameWon) {
+    return;
+  }
+
+  if (currentMapIndex === 0 && selectedRegion.name === "The Ruins") {
+    teleportTimer = 0;
+    currentMapIndex = 1;
+    currentLevelIndex = 1;
+    unlockedRegionIndex = 0;
+    completedRegions = new Set([...completedRegions].filter((key) => !key.startsWith("1:")));
+    startLevel(1);
+    showMessage("Tim has been teleported to a different map!", 3200);
+    return;
+  }
+
+  if (currentMapIndex === 1 && selectedRegion.name === "Scarve City") {
+    showMessage("All new levels are complete!", 999999);
+    nextLevel.disabled = true;
+    return;
+  }
+
+  startLevel(currentMapIndex);
+  const nextName = currentUnlockOrder()[unlockedRegionIndex];
+  showMessage(`${nextName} is unlocked! Click it to start.`, 2400);
+}
+
 function renderList() {
   seekList.innerHTML = "";
   const levelTargets = activeTargetNames();
@@ -557,9 +748,18 @@ function renderList() {
   foundCount.textContent = selectedRegion ? `${foundTargets} / ${levelTargets.length}` : "Pick map";
 
   if (!selectedRegion) {
-    for (const region of mapRegions) {
+    const orderedRegions = [
+      ...currentUnlockOrder()
+        .map((name) => activeMapRegions().find((region) => region.name === name))
+        .filter(Boolean),
+      ...activeMapRegions().filter((region) => !currentUnlockOrder().includes(region.name)),
+    ];
+    for (const region of orderedRegions) {
       const item = document.createElement("li");
-      item.innerHTML = `<span>${region.name}</span><strong>mission</strong>`;
+      const locked = !isRegionUnlocked(region);
+      const done = isRegionCompleted(region);
+      item.className = done ? "found" : "";
+      item.innerHTML = `<span>${region.name}</span><strong>${done ? "done" : locked ? "locked" : "open"}</strong>`;
       seekList.append(item);
     }
     return;
@@ -585,6 +785,35 @@ function showMessage(text, duration = 1700) {
   message.textContent = text;
   message.classList.remove("is-hidden");
   flashTimer = duration;
+}
+
+function completeMission(text) {
+  if (!selectedRegion || gameWon) {
+    return;
+  }
+
+  completedRegions.add(`${currentMapIndex}:${selectedRegion.name}`);
+  const regionOrderIndex = currentUnlockOrder().indexOf(selectedRegion.name);
+  if (regionOrderIndex >= unlockedRegionIndex && regionOrderIndex < currentUnlockOrder().length - 1) {
+    unlockedRegionIndex = regionOrderIndex + 1;
+  }
+
+  gameWon = true;
+  nextLevel.disabled = false;
+  renderList();
+
+  if (currentMapIndex === 0 && selectedRegion.name === "The Ruins") {
+    teleportTimer = 2600;
+    showMessage(`${text} Tim is getting teleported to a different map!`, 999999);
+    return;
+  }
+
+  if (currentMapIndex === 1 && selectedRegion.name === "Scarve City") {
+    showMessage(`${text} Tim completed the different map!`, 999999);
+    return;
+  }
+
+  showMessage(text, 999999);
 }
 
 function damagePlayer(amount, text) {
@@ -761,9 +990,7 @@ function interact() {
       .filter((candidate) => candidate.target)
       .every((candidate) => candidate.found);
     if (missionComplete) {
-      gameWon = true;
-      nextLevel.disabled = false;
-      showMessage(`${selectedRegion.name} mission complete!`, 999999);
+      completeMission(`${selectedRegion.name} mission complete!`);
     }
     return;
   }
@@ -805,7 +1032,7 @@ function updateMazePlayer() {
     player.y = selectedRegion.text[1] + 120;
     player.trail = [];
     updateCamera();
-    showMessage("Maze complete. Tim unlocked zapping and slashing!", 2600);
+    completeMission("Maze complete. Tim unlocked zapping and slashing!");
   }
 }
 
@@ -844,6 +1071,14 @@ function updateHazards() {
     }
   }
 
+  if (poisoned) {
+    poisonTimer += 1;
+    if (poisonTimer > 210) {
+      poisonTimer = 0;
+      damagePlayer(1, "The cheese poison slowly hurts Tim.");
+    }
+  }
+
   for (const hazard of hazards) {
     if (hazard.type === "storm") {
       hazard.x += hazard.vx;
@@ -862,6 +1097,18 @@ function updateHazards() {
       hearts = 0;
       updateHearts();
       goToHeaven("Tim fell in lava.");
+    }
+
+    if (hazard.type === "cheese" && distance(player, hazard) < hazard.radius + player.radius && !hazard.touched) {
+      poisoned = true;
+      hazard.touched = true;
+      showMessage("Tim touched poisonous cheese and turned green!", 1200);
+    }
+
+    if (hazard.type === "hole" && distance(player, hazard) < hazard.radius + player.radius) {
+      hearts = 0;
+      updateHearts();
+      goToHeaven("Tim fell into a hole.");
     }
 
     if (hazard.type === "human") {
@@ -906,6 +1153,49 @@ function updateHazards() {
       updateProjectiles(hazard.fire, 2, "Dragon fire burns away two hearts.");
     }
 
+    if (hazard.type === "bear") {
+      const toPlayer = Math.max(1, distance(hazard, player));
+      hazard.x += ((player.x - hazard.x) / toPlayer) * 1.65;
+      hazard.y += ((player.y - hazard.y) / toPlayer) * 1.65;
+      if (toPlayer < 42) {
+        damagePlayer(1, "A rainforest bear hit Tim.");
+      }
+    }
+
+    if (hazard.type === "lightning") {
+      hazard.cooldown -= 1;
+      if (hazard.cooldown <= 0) {
+        const spot = randomPointInRegion(selectedRegion);
+        hazard.x = spot.x;
+        hazard.y = spot.y;
+        hazard.flash = 28;
+        hazard.cooldown = 70 + Math.floor(randomBetween(0, 70));
+      }
+      if (hazard.flash > 0) {
+        hazard.flash -= 1;
+        if (distance(player, hazard) < hazard.radius + player.radius + 8) {
+          damagePlayer(2, "Lightning crashed onto Tim for two hearts.");
+          hazard.flash = 0;
+        }
+      }
+    }
+
+    if (hazard.type === "golfer") {
+      hazard.cooldown -= 1;
+      if (hazard.cooldown <= 0) {
+        const toPlayer = Math.max(1, distance(hazard, player));
+        hazard.bullets.push({
+          x: hazard.x,
+          y: hazard.y,
+          vx: ((player.x - hazard.x) / toPlayer) * 4.5,
+          vy: ((player.y - hazard.y) / toPlayer) * 4.5,
+          life: 130,
+        });
+        hazard.cooldown = 90 + Math.floor(randomBetween(0, 60));
+      }
+      updateProjectiles(hazard.bullets, 1, "A golf ball hit Tim on the head.");
+    }
+
     if (hazard.type === "portal" && distance(player, hazard) < hazard.radius) {
       if (portalCompleted) {
         continue;
@@ -929,7 +1219,7 @@ function updateAiCompanions() {
     return;
   }
 
-  const harmful = hazards.filter((hazard) => ["sniper", "human", "dragon"].includes(hazard.type));
+  const harmful = hazards.filter((hazard) => ["sniper", "human", "dragon", "bear", "golfer"].includes(hazard.type));
   if (!harmful.length) {
     return;
   }
@@ -950,7 +1240,7 @@ function useZap() {
   }
 
   const target = hazards
-    .filter((hazard) => ["sniper", "human", "dragon"].includes(hazard.type))
+    .filter((hazard) => ["sniper", "human", "dragon", "bear", "golfer"].includes(hazard.type))
     .sort((a, b) => distance(player, a) - distance(player, b))[0];
 
   if (!target || distance(player, target) > 520) {
@@ -970,7 +1260,7 @@ function useSlash() {
 
   let hit = false;
   for (let i = hazards.length - 1; i >= 0; i -= 1) {
-    if (["sniper", "human", "dragon"].includes(hazards[i].type) && distance(player, hazards[i]) < 150) {
+    if (["sniper", "human", "dragon", "bear", "golfer"].includes(hazards[i].type) && distance(player, hazards[i]) < 150) {
       hazards.splice(i, 1);
       hit = true;
     }
@@ -1017,9 +1307,7 @@ function checkFound() {
       renderList();
 
       if (person.name === "Mrs Grove") {
-        gameWon = true;
-        nextLevel.disabled = false;
-        showMessage(`Mrs Grove found. ${selectedRegion.name} mission complete!`, 999999);
+        completeMission(`Mrs Grove found. ${selectedRegion.name} mission complete!`);
       } else {
         showMessage(`${person.name} found. They are following Tim now!`);
       }
@@ -1028,9 +1316,7 @@ function checkFound() {
         .filter((candidate) => candidate.target)
         .every((candidate) => candidate.found);
       if (missionComplete) {
-        gameWon = true;
-        nextLevel.disabled = false;
-        showMessage(`${selectedRegion.name} mission complete!`, 999999);
+        completeMission(`${selectedRegion.name} mission complete!`);
       }
     }
   }
@@ -1045,7 +1331,6 @@ function checkFound() {
 
   if (pickups.length > 0 && pickups.every((pickup) => pickup.found) && !keysReadyAnnounced) {
     keysReadyAnnounced = true;
-    nextLevel.disabled = false;
     showMessage("All magic keys found. Go to the question mark for the maze!", 1800);
   }
 }
@@ -1061,14 +1346,14 @@ function updateCamera() {
 }
 
 function drawGround() {
-  ctx.fillStyle = "#bfd0ef";
+  ctx.fillStyle = activeMap().background;
   ctx.fillRect(0, 0, viewWidth(), viewHeight());
 
-  for (const region of mapRegions) {
+  for (const region of activeMapRegions()) {
     drawWorldPolygon(region.points, region.fill);
   }
 
-  for (const region of mapRegions) {
+  for (const region of activeMapRegions()) {
     strokeWorldPath(region.points, true, "#142033", 5);
     drawPixelText(region.name, region.text[0] - camera.x, region.text[1] - camera.y, region.name.length > 11 ? 34 : 40);
   }
@@ -1191,6 +1476,68 @@ function drawSceneryItem(item, x, y) {
     return;
   }
 
+  if (item.type === "cheese") {
+    ctx.fillStyle = "#f2c94c";
+    ctx.beginPath();
+    ctx.moveTo(x - s * 0.5, y + s * 0.28);
+    ctx.lineTo(x + s * 0.42, y + s * 0.28);
+    ctx.lineTo(x + s * 0.18, y - s * 0.45);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = "#c7931f";
+    drawPixelCircle(x - s * 0.12, y + s * 0.02, s * 0.08, "#c7931f");
+    drawPixelCircle(x + s * 0.18, y + s * 0.12, s * 0.07, "#c7931f");
+    drawPixelCircle(x + s * 0.06, y - s * 0.18, s * 0.06, "#c7931f");
+    return;
+  }
+
+  if (item.type === "bolt") {
+    ctx.fillStyle = "#f7d66b";
+    ctx.beginPath();
+    ctx.moveTo(x + s * 0.1, y - s * 0.55);
+    ctx.lineTo(x - s * 0.22, y + s * 0.03);
+    ctx.lineTo(x + s * 0.02, y + s * 0.03);
+    ctx.lineTo(x - s * 0.12, y + s * 0.55);
+    ctx.lineTo(x + s * 0.34, y - s * 0.12);
+    ctx.lineTo(x + s * 0.08, y - s * 0.12);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    return;
+  }
+
+  if (item.type === "bridge-house") {
+    ctx.fillStyle = "#8f654f";
+    ctx.fillRect(x - s * 0.55, y - s * 0.25, s * 1.1, s * 0.75);
+    ctx.fillStyle = "#d5b287";
+    ctx.fillRect(x - s * 0.42, y - s * 0.08, s * 0.38, s * 0.28);
+    ctx.fillRect(x + s * 0.05, y - s * 0.08, s * 0.36, s * 0.28);
+    ctx.strokeRect(x - s * 0.55, y - s * 0.25, s * 1.1, s * 0.75);
+    ctx.strokeRect(x - s * 0.42, y - s * 0.08, s * 0.38, s * 0.28);
+    ctx.strokeRect(x + s * 0.05, y - s * 0.08, s * 0.36, s * 0.28);
+    return;
+  }
+
+  if (item.type === "golf-flag") {
+    ctx.strokeStyle = "#172033";
+    ctx.lineWidth = 8;
+    ctx.beginPath();
+    ctx.moveTo(x, y - s * 0.55);
+    ctx.lineTo(x, y + s * 0.45);
+    ctx.stroke();
+    ctx.fillStyle = "#f6f1df";
+    ctx.beginPath();
+    ctx.moveTo(x, y - s * 0.55);
+    ctx.lineTo(x + s * 0.48, y - s * 0.36);
+    ctx.lineTo(x, y - s * 0.16);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    drawPixelCircle(x, y + s * 0.47, s * 0.08, "#172033");
+    return;
+  }
+
   ctx.fillStyle = item.type === "lava-rock" ? "#67383a" : "#8b8896";
   ctx.fillRect(x - s * 0.45, y - s * 0.28, s * 0.9, s * 0.56);
   ctx.strokeRect(x - s * 0.45, y - s * 0.28, s * 0.9, s * 0.56);
@@ -1298,7 +1645,78 @@ function drawDragon(x, y) {
   ctx.fillRect(x + 31, y - 6, 4, 4);
 }
 
+function drawFriendlyPerson(x, y) {
+  ctx.fillStyle = "#f1c59a";
+  ctx.fillRect(x - 12, y - 28, 24, 22);
+  ctx.fillStyle = "#f0a62b";
+  ctx.fillRect(x - 16, y - 34, 32, 9);
+  ctx.fillStyle = "#f6f1df";
+  ctx.fillRect(x - 16, y - 4, 32, 34);
+  ctx.fillStyle = "#12344a";
+  ctx.fillRect(x - 10, y + 30, 8, 22);
+  ctx.fillRect(x + 3, y + 30, 8, 22);
+  ctx.fillStyle = "#111";
+  ctx.fillRect(x - 6, y - 19, 4, 4);
+  ctx.fillRect(x + 5, y - 19, 4, 4);
+  ctx.strokeStyle = "#172033";
+  ctx.lineWidth = 4;
+  ctx.strokeRect(x + 18, y - 28, 24, 36);
+  ctx.fillStyle = "#bdeaf0";
+  ctx.fillRect(x + 22, y - 24, 16, 28);
+  ctx.fillStyle = "#ff6969";
+  ctx.fillRect(x + 26, y - 12, 4, 4);
+  ctx.fillRect(x + 33, y - 12, 4, 4);
+}
+
+function drawBear(x, y) {
+  ctx.fillStyle = "#7a5a3b";
+  ctx.fillRect(x - 30, y - 12, 58, 32);
+  ctx.fillRect(x + 16, y - 28, 25, 24);
+  ctx.fillRect(x - 26, y + 16, 11, 22);
+  ctx.fillRect(x + 12, y + 16, 11, 22);
+  ctx.fillStyle = "#5a3d28";
+  ctx.fillRect(x + 17, y - 35, 9, 9);
+  ctx.fillRect(x + 33, y - 33, 8, 8);
+  ctx.fillStyle = "#111";
+  ctx.fillRect(x + 33, y - 17, 5, 5);
+  ctx.fillStyle = "#c9504a";
+  ctx.fillRect(x + 39, y - 10, 5, 4);
+}
+
+function drawGolfer(x, y) {
+  ctx.fillStyle = "#f1c59a";
+  ctx.fillRect(x - 10, y - 30, 20, 20);
+  ctx.fillStyle = "#3456a3";
+  ctx.fillRect(x - 14, y - 38, 28, 8);
+  ctx.fillStyle = "#f6f1df";
+  ctx.fillRect(x - 14, y - 10, 28, 30);
+  ctx.fillStyle = "#2f3541";
+  ctx.fillRect(x - 12, y + 20, 9, 26);
+  ctx.fillRect(x + 4, y + 20, 9, 26);
+  ctx.strokeStyle = "#172033";
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.moveTo(x + 19, y - 4);
+  ctx.lineTo(x + 44, y + 42);
+  ctx.stroke();
+  ctx.fillStyle = "#f6f1df";
+  ctx.fillRect(x + 37, y + 39, 18, 7);
+}
+
 function drawHazards() {
+  if (selectedRegion?.name === "Lightning City") {
+    ctx.strokeStyle = "rgba(190, 224, 255, 0.7)";
+    ctx.lineWidth = 3;
+    for (let i = 0; i < 42; i += 1) {
+      const x = (i * 73 + performance.now() * 0.08) % viewWidth();
+      const y = (i * 41 + performance.now() * 0.22) % viewHeight();
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x - 14, y + 26);
+      ctx.stroke();
+    }
+  }
+
   for (const hazard of hazards) {
     const x = hazard.x - camera.x;
     const y = hazard.y - camera.y;
@@ -1328,6 +1746,25 @@ function drawHazards() {
       ctx.fillRect(x - 16, y - 5, 32, 10);
     }
 
+    if (hazard.type === "cheese") {
+      drawSceneryItem({ type: "cheese", size: hazard.radius * 1.4 }, x, y);
+      if (poisoned) {
+        drawPixelText("POISON", x, y - 54, 16, "#256d36");
+      }
+    }
+
+    if (hazard.type === "hole") {
+      ctx.fillStyle = "#101010";
+      ctx.fillRect(x - hazard.radius, y - hazard.radius * 0.45, hazard.radius * 2, hazard.radius * 0.9);
+      ctx.strokeStyle = "#4f352b";
+      ctx.lineWidth = 6;
+      ctx.strokeRect(x - hazard.radius, y - hazard.radius * 0.45, hazard.radius * 2, hazard.radius * 0.9);
+    }
+
+    if (hazard.type === "friendly") {
+      drawFriendlyPerson(x, y);
+    }
+
     if (hazard.type === "human") {
       drawAngryHuman(x, y);
     }
@@ -1339,6 +1776,28 @@ function drawHazards() {
         ctx.fillRect(fire.x - camera.x - 10, fire.y - camera.y - 10, 20, 20);
         ctx.fillStyle = "#ffd166";
         ctx.fillRect(fire.x - camera.x - 5, fire.y - camera.y - 5, 10, 10);
+      }
+    }
+
+    if (hazard.type === "bear") {
+      drawBear(x, y);
+    }
+
+    if (hazard.type === "lightning") {
+      ctx.globalAlpha = hazard.flash > 0 ? 1 : 0.32;
+      drawSceneryItem({ type: "bolt", size: 85 }, x, y);
+      ctx.globalAlpha = 1;
+      if (hazard.flash > 0) {
+        ctx.fillStyle = "rgba(255, 243, 181, 0.35)";
+        ctx.fillRect(x - 18, 0, 36, y);
+      }
+    }
+
+    if (hazard.type === "golfer") {
+      drawGolfer(x, y);
+      ctx.fillStyle = "#f6f1df";
+      for (const ball of hazard.bullets) {
+        ctx.fillRect(ball.x - camera.x - 5, ball.y - camera.y - 5, 10, 10);
       }
     }
 
@@ -1424,7 +1883,7 @@ function drawPlayer() {
 
   ctx.fillStyle = "rgba(0, 0, 0, 0.28)";
   ctx.fillRect(x - 22, y + 22, 44, 8);
-  ctx.fillStyle = "#71c7ff";
+  ctx.fillStyle = poisoned ? "#64c96f" : "#71c7ff";
   ctx.fillRect(x - 14, y - 7, 28, 28);
   ctx.fillRect(x - 10, y + 21, 8, 14);
   ctx.fillRect(x + 3, y + 21, 8, 14);
@@ -1508,7 +1967,7 @@ function drawMiniMap() {
 
   ctx.fillStyle = "rgba(14, 20, 10, 0.78)";
   ctx.fillRect(x, y, mapWidth, mapHeight);
-  for (const region of mapRegions) {
+  for (const region of activeMapRegions()) {
     ctx.fillStyle = region.fill;
     ctx.beginPath();
     ctx.moveTo(x + region.points[0][0] * scale, y + region.points[0][1] * scale);
@@ -1547,9 +2006,11 @@ function drawSelectionMap() {
   ctx.translate(offsetX, offsetY);
   ctx.scale(scale, scale);
 
-  ctx.fillStyle = "#bfd0ef";
+  ctx.fillStyle = activeMap().background;
   ctx.fillRect(0, 0, world.width, world.height);
-  for (const region of mapRegions) {
+  for (const region of activeMapRegions()) {
+    const locked = !isRegionUnlocked(region);
+    const done = isRegionCompleted(region);
     ctx.fillStyle = region.fill;
     ctx.beginPath();
     ctx.moveTo(region.points[0][0], region.points[0][1]);
@@ -1561,10 +2022,18 @@ function drawSelectionMap() {
     ctx.strokeStyle = "#142033";
     ctx.lineWidth = 8;
     ctx.stroke();
+    if (locked) {
+      ctx.fillStyle = "rgba(210, 230, 255, 0.52)";
+      ctx.fill();
+      drawPixelText("LOCK", region.text[0], region.text[1] + 82, 44, "#172033");
+    }
+    if (done) {
+      drawPixelText("DONE", region.text[0], region.text[1] + 82, 38, "#256d36");
+    }
     drawPixelText(region.name, region.text[0], region.text[1], region.name.length > 11 ? 72 : 82);
   }
 
-  for (const item of fixedLandmarks) {
+  for (const item of activeMapLandmarks()) {
     drawSceneryItem(item, item.x, item.y);
   }
   ctx.restore();
@@ -1573,7 +2042,7 @@ function drawSelectionMap() {
   ctx.font = "800 24px \"Courier New\", monospace";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillText("CLICK A PLACE TO START", canvas.width / 2, canvas.height - 28);
+  ctx.fillText(`${activeMap().name.toUpperCase()} - CLICK AN OPEN PLACE`, canvas.width / 2, canvas.height - 28);
 }
 
 function drawMenuButton(x, y, width, height, label) {
@@ -2130,6 +2599,13 @@ function tick() {
   updateCamera();
   draw();
 
+  if (teleportTimer > 0) {
+    teleportTimer -= 16;
+    if (teleportTimer <= 0) {
+      continueAdventure();
+    }
+  }
+
   if (flashTimer > 0 && !gameWon) {
     flashTimer -= 16;
     if (flashTimer <= 0) {
@@ -2253,7 +2729,7 @@ function handleMenuClick(event) {
 
   if (screen === "menu") {
     if (pointInRect(point, 362, 230, 300, 68)) {
-      startLevel(currentLevelIndex);
+      beginAdventure();
       return;
     }
     if (pointInRect(point, 362, 325, 300, 68)) {
@@ -2441,6 +2917,6 @@ mobileControls.addEventListener("pointerup", (event) => {
 });
 
 restart.addEventListener("click", resetGame);
-nextLevel.addEventListener("click", () => startLevel(currentLevelIndex + 1));
+nextLevel.addEventListener("click", continueAdventure);
 
 tick();
