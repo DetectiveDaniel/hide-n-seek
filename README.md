@@ -4,6 +4,9 @@ A small pixelated browser game where you play as Tim and find hidden people acro
 
 Open `index.html` in a browser to play.
 
+The page starts with a game picker for the local games in `C:\Users\daniel\git`.
+Choose a game to see a themed preview with README-style notes, press Play to see the loading screen, or use the "Bored? Play a game!" button to play the dino cactus jumper while it loads.
+
 Controls:
 
 - Use the main menu buttons for START, SETTINGS, and HOW TO PLAY.
