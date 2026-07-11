@@ -1,5 +1,7 @@
 (function addGamePickerBackButton() {
-  const pickerUrl = "../hide-n-seek/index.html";
+  const pickerUrl = window.location.protocol === "file:"
+    ? "../hide-n-seek/index.html"
+    : "/";
   const existing = document.querySelector("[data-game-picker-back]");
   if (existing) {
     return;
