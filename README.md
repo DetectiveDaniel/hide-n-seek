@@ -10,6 +10,7 @@ Choose a game to see a themed preview with README-style notes, press Play to see
 Controls:
 
 - Use the main menu buttons for START, SETTINGS, and HOW TO PLAY.
+- Use MULTIPLAYER to type how many players are joining, up to 30, and pick shirt colors for each player.
 - SETTINGS has a Cheats option. YES means Tim cannot get hurt; NO means Tim can get hurt.
 - Click an unlocked place on the map to start that place's mission.
 - Arrow keys or WASD to move.
@@ -18,6 +19,7 @@ Controls:
 - In First Person, click doors or press Space to interact.
 - On mobile, the on-screen top arrow can climb trees and other climbable things.
 - Found people follow Tim around.
+- In multiplayer, Player 1 controls Tim and the other players follow with their chosen shirts.
 - Finding Mrs Grove wins instantly.
 - The map has transparent locks. Snow starts open, then missions unlock The Runes, Desert, Forest, Lava Lands, and The Ruins.
 - After The Ruins maze is complete, Tim is teleported to a different map.

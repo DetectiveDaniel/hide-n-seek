@@ -285,6 +285,24 @@ let zapEffects = [];
 let slashEffects = [];
 let chocBoosts = 0;
 let hasZapSlash = false;
+const shirtPalette = [
+  "#71c7ff",
+  "#ff6969",
+  "#9ee493",
+  "#f7d66b",
+  "#c084fc",
+  "#ff9f43",
+  "#49d6ff",
+  "#f472b6",
+  "#a3e635",
+  "#f6f1df",
+];
+let multiplayerEnabled = false;
+let multiplayerPlayerCount = 1;
+let multiplayerCountText = "1";
+let selectedShirtPlayer = 0;
+let multiplayerShirts = Array.from({ length: 30 }, (_, index) => shirtPalette[index % shirtPalette.length]);
+let multiplayerPlayers = [];
 
 const mazeWalls = [
   [0, 0, 1024, 24],
@@ -361,6 +379,58 @@ function isRegionUnlocked(region) {
 
 function isRegionCompleted(region) {
   return completedRegions.has(`${currentMapIndex}:${region.name}`);
+}
+
+function clampPlayerCount(value) {
+  return clamp(Number.parseInt(value, 10) || 1, 1, 30);
+}
+
+function setMultiplayerCount(value) {
+  multiplayerPlayerCount = clampPlayerCount(value);
+  multiplayerCountText = String(multiplayerPlayerCount);
+  if (selectedShirtPlayer >= multiplayerPlayerCount) {
+    selectedShirtPlayer = multiplayerPlayerCount - 1;
+  }
+}
+
+function startMultiplayerAdventure() {
+  multiplayerEnabled = multiplayerPlayerCount > 1;
+  beginAdventure();
+  showMessage(
+    multiplayerEnabled
+      ? `${multiplayerPlayerCount} players joined. Choose an unlocked place.`
+      : "1 player mode. Choose an unlocked place.",
+    2600,
+  );
+}
+
+function spawnMultiplayerPlayers(start) {
+  multiplayerPlayers = [];
+  const count = multiplayerEnabled ? multiplayerPlayerCount : 1;
+  for (let index = 1; index < count; index += 1) {
+    multiplayerPlayers.push({
+      name: `P${index + 1}`,
+      shirt: multiplayerShirts[index],
+      x: start.x - 34 - index * 10,
+      y: start.y + 34 + (index % 4) * 8,
+      wiggle: randomBetween(0, Math.PI * 2),
+    });
+  }
+}
+
+function updateMultiplayerPlayers() {
+  if (!gameStarted || mazeMode || !player || multiplayerPlayers.length === 0) {
+    return;
+  }
+
+  multiplayerPlayers.forEach((mate, index) => {
+    const targetPoint = player.trail[(index + 2) * 14] || player;
+    const offsetX = ((index % 5) - 2) * 16;
+    const offsetY = 34 + Math.floor(index / 5) * 12;
+    mate.x += (targetPoint.x + offsetX - mate.x) * 0.09;
+    mate.y += (targetPoint.y + offsetY - mate.y) * 0.09;
+    mate.wiggle += 0.08;
+  });
 }
 
 function activePerspective() {
@@ -675,6 +745,7 @@ function startMission(region) {
     fpDepth: 0,
   };
   missionStart = { x: start.x, y: start.y, region };
+  spawnMultiplayerPlayers(start);
 
   setupMissionObjects(region);
   people = region.name === "The Ruins"
@@ -856,6 +927,7 @@ function reviveFromHeaven() {
   player.fpOffset = 0;
   player.fpDepth = 0;
   firstPersonPlace = "street";
+  spawnMultiplayerPlayers(missionStart);
   updateHearts();
   updateCamera();
   showMessage("Reviver used. Tim respawned where he started.", 1800);
@@ -876,6 +948,7 @@ function leaveHeaven() {
   player.fpOffset = 0;
   player.fpDepth = 0;
   firstPersonPlace = "street";
+  spawnMultiplayerPlayers(missionStart);
   updateHearts();
   updateCamera();
   showMessage("Tim came out of Heaven.", 1600);
@@ -1877,13 +1950,10 @@ function drawMagicKey(x, y) {
   ctx.fillRect(x + 2, y - 3, 18, 2);
 }
 
-function drawPlayer() {
-  const x = player.x - camera.x;
-  const y = player.y - camera.y;
-
+function drawPlayerAvatar(x, y, shirt, name, poisonedPlayer = false) {
   ctx.fillStyle = "rgba(0, 0, 0, 0.28)";
   ctx.fillRect(x - 22, y + 22, 44, 8);
-  ctx.fillStyle = poisoned ? "#64c96f" : "#71c7ff";
+  ctx.fillStyle = poisonedPlayer ? "#64c96f" : shirt;
   ctx.fillRect(x - 14, y - 7, 28, 28);
   ctx.fillRect(x - 10, y + 21, 8, 14);
   ctx.fillRect(x + 3, y + 21, 8, 14);
@@ -1898,7 +1968,24 @@ function drawPlayer() {
   ctx.fillStyle = "#f6f1df";
   ctx.font = "800 15px \"Courier New\", monospace";
   ctx.textAlign = "center";
-  ctx.fillText("Tim", x, y - 31);
+  ctx.fillText(name, x, y - 31);
+}
+
+function drawPlayer() {
+  const x = player.x - camera.x;
+  const y = player.y - camera.y;
+  drawPlayerAvatar(x, y, multiplayerShirts[0], "P1 Tim", poisoned);
+}
+
+function drawMultiplayerPlayers() {
+  for (const mate of multiplayerPlayers) {
+    const x = mate.x - camera.x;
+    const y = mate.y - camera.y + Math.round(Math.sin(mate.wiggle) * 2);
+    if (x < -60 || x > viewWidth() + 60 || y < -60 || y > viewHeight() + 60) {
+      continue;
+    }
+    drawPlayerAvatar(x, y, mate.shirt, mate.name);
+  }
 }
 
 function drawAiRobot(x, y, scale = 1) {
@@ -2062,9 +2149,58 @@ function drawMainMenu() {
   drawCloud(100, 96, 0.75);
   drawCloud(760, 110, 0.65);
   drawPixelText("HIDE 'N' SEEK!", canvas.width / 2, 135, 52, "#fff3b5");
-  drawMenuButton(362, 230, 300, 68, "START");
-  drawMenuButton(362, 325, 300, 68, "SETTINGS");
-  drawMenuButton(362, 420, 300, 68, "HOW TO PLAY");
+  drawMenuButton(362, 205, 300, 62, "START");
+  drawMenuButton(362, 285, 300, 62, "MULTIPLAYER");
+  drawMenuButton(362, 365, 300, 62, "SETTINGS");
+  drawMenuButton(362, 445, 300, 62, "HOW TO PLAY");
+}
+
+function drawMultiplayerSetup() {
+  ctx.imageSmoothingEnabled = false;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = "#172033";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  drawPixelText("MULTIPLAYER", canvas.width / 2, 58, 46, "#fff3b5");
+  drawPixelText("Type how many players. Maximum 30.", canvas.width / 2, 108, 22, "#f6f1df");
+
+  ctx.fillStyle = "#f6f1df";
+  ctx.fillRect(340, 132, 344, 76);
+  ctx.strokeStyle = "#172033";
+  ctx.lineWidth = 5;
+  ctx.strokeRect(340, 132, 344, 76);
+  drawPixelText(`${multiplayerCountText || "_" } PLAYERS`, 512, 170, 34, "#172033");
+
+  drawPixelText(`Choose shirt for Player ${selectedShirtPlayer + 1}`, canvas.width / 2, 244, 24, "#fff3b5");
+
+  for (let i = 0; i < 30; i += 1) {
+    const col = i % 10;
+    const row = Math.floor(i / 10);
+    const x = 177 + col * 70;
+    const y = 282 + row * 58;
+    ctx.fillStyle = multiplayerShirts[i];
+    ctx.fillRect(x, y, 48, 34);
+    ctx.strokeStyle = i === selectedShirtPlayer ? "#fff3b5" : "#050505";
+    ctx.lineWidth = i === selectedShirtPlayer ? 6 : 3;
+    ctx.strokeRect(x, y, 48, 34);
+    ctx.fillStyle = i < multiplayerPlayerCount ? "#f6f1df" : "#778092";
+    ctx.font = "800 13px \"Courier New\", monospace";
+    ctx.textAlign = "center";
+    ctx.fillText(`P${i + 1}`, x + 24, y + 51);
+  }
+
+  drawPixelText("SHIRTS", 155, 505, 20, "#f6f1df");
+  shirtPalette.forEach((color, index) => {
+    const x = 225 + index * 58;
+    const y = 488;
+    ctx.fillStyle = color;
+    ctx.fillRect(x, y, 42, 42);
+    ctx.strokeStyle = "#050505";
+    ctx.lineWidth = 4;
+    ctx.strokeRect(x, y, 42, 42);
+  });
+
+  drawMenuButton(278, 558, 210, 56, "START");
+  drawMenuButton(536, 558, 210, 56, "BACK");
 }
 
 function drawSettings() {
@@ -2548,6 +2684,11 @@ function draw() {
     return;
   }
 
+  if (screen === "multiplayer") {
+    drawMultiplayerSetup();
+    return;
+  }
+
   if (screen === "howToPlay") {
     drawHowToPlay();
     return;
@@ -2586,6 +2727,7 @@ function draw() {
     drawPerson(person);
   }
   drawAiCompanions();
+  drawMultiplayerPlayers();
   drawPlayer();
   ctx.restore();
   drawMiniMap();
@@ -2594,6 +2736,7 @@ function draw() {
 function tick() {
   updatePlayer();
   updateFollowers();
+  updateMultiplayerPlayers();
   updateHazards();
   checkFound();
   updateCamera();
@@ -2617,6 +2760,28 @@ function tick() {
 }
 
 window.addEventListener("keydown", (event) => {
+  if (screen === "multiplayer") {
+    if (/^[0-9]$/.test(event.key)) {
+      multiplayerCountText = multiplayerCountText === "1" && multiplayerPlayerCount === 1
+        ? event.key
+        : `${multiplayerCountText}${event.key}`.slice(-2);
+      setMultiplayerCount(multiplayerCountText);
+      event.preventDefault();
+      return;
+    }
+    if (event.key === "Backspace") {
+      multiplayerCountText = multiplayerCountText.slice(0, -1);
+      setMultiplayerCount(multiplayerCountText || "1");
+      event.preventDefault();
+      return;
+    }
+    if (event.key === "Enter") {
+      startMultiplayerAdventure();
+      event.preventDefault();
+      return;
+    }
+  }
+
   if (event.key === "F5") {
     event.preventDefault();
     if (!gameStarted) {
@@ -2654,7 +2819,7 @@ window.addEventListener("keyup", (event) => {
 });
 
 canvas.addEventListener("pointerdown", (event) => {
-  if (["menu", "settings", "howToPlay"].includes(screen)) {
+  if (["menu", "settings", "howToPlay", "multiplayer"].includes(screen)) {
     handleMenuClick(event);
     return;
   }
@@ -2728,16 +2893,57 @@ function handleMenuClick(event) {
   const point = canvasPointFromEvent(event);
 
   if (screen === "menu") {
-    if (pointInRect(point, 362, 230, 300, 68)) {
+    if (pointInRect(point, 362, 205, 300, 62)) {
+      multiplayerEnabled = false;
+      multiplayerPlayerCount = 1;
+      multiplayerCountText = "1";
       beginAdventure();
       return;
     }
-    if (pointInRect(point, 362, 325, 300, 68)) {
+    if (pointInRect(point, 362, 285, 300, 62)) {
+      screen = "multiplayer";
+      return;
+    }
+    if (pointInRect(point, 362, 365, 300, 62)) {
       screen = "settings";
       return;
     }
-    if (pointInRect(point, 362, 420, 300, 68)) {
+    if (pointInRect(point, 362, 445, 300, 62)) {
       screen = "howToPlay";
+      return;
+    }
+  }
+
+  if (screen === "multiplayer") {
+    for (let i = 0; i < 30; i += 1) {
+      const col = i % 10;
+      const row = Math.floor(i / 10);
+      const x = 177 + col * 70;
+      const y = 282 + row * 58;
+      if (pointInRect(point, x - 6, y - 6, 60, 60)) {
+        selectedShirtPlayer = i;
+        if (i >= multiplayerPlayerCount) {
+          setMultiplayerCount(i + 1);
+        }
+        return;
+      }
+    }
+
+    for (let i = 0; i < shirtPalette.length; i += 1) {
+      const x = 225 + i * 58;
+      const y = 488;
+      if (pointInRect(point, x, y, 42, 42)) {
+        multiplayerShirts[selectedShirtPlayer] = shirtPalette[i];
+        return;
+      }
+    }
+
+    if (pointInRect(point, 278, 558, 210, 56)) {
+      startMultiplayerAdventure();
+      return;
+    }
+    if (pointInRect(point, 536, 558, 210, 56)) {
+      screen = "menu";
       return;
     }
   }
